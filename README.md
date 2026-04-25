@@ -41,7 +41,7 @@ Skills also activate automatically based on what you're doing — designing an A
 **Marketplace install:**
 
 ```
-/plugin marketplace add addyosmani/agent-skills
+/plugin marketplace add tisan-das/agent-skills
 /plugin install agent-skills@addy-agent-skills
 ```
 
@@ -53,7 +53,7 @@ Skills also activate automatically based on what you're doing — designing an A
 **Local / development:**
 
 ```bash
-git clone https://github.com/addyosmani/agent-skills.git
+git clone https://github.com/tisan-das/agent-skills.git
 claude --plugin-dir /path/to/agent-skills
 ```
 
@@ -74,7 +74,7 @@ Install as native skills for auto-discovery, or add to `GEMINI.md` for persisten
 **Install from the repo:**
 
 ```bash
-gemini skills install https://github.com/addyosmani/agent-skills.git --path skills
+gemini skills install https://github.com/tisan-das/agent-skills.git --path skills
 ```
 
 **Install from a local clone:**
@@ -105,6 +105,48 @@ See [docs/opencode-setup.md](docs/opencode-setup.md).
 <summary><b>GitHub Copilot</b></summary>
 
 Use agent definitions from `agents/` as Copilot personas and skill content in `.github/copilot-instructions.md`. See [docs/copilot-setup.md](docs/copilot-setup.md).
+
+**Centralized setup (recommended for multiple projects)**
+
+Keep agent-skills cloned once and wire every project to it via symlinks — update skills in one place, all projects pick up the change automatically.
+
+```bash
+# Clone once to a permanent location
+git clone https://github.com/tisan-das/agent-skills.git ~/agent-skills
+
+# Wire a project (run from inside the project, or pass the path)
+cd ~/projects/my-app
+~/agent-skills/setup-project.sh
+
+# Re-run anytime to pick up new skills or agents
+~/agent-skills/setup-project.sh ~/projects/another-app
+```
+
+This creates symlinks under `.github/` in your project:
+
+```
+.github/
+├── copilot-instructions.md  → ~/agent-skills/copilot-instructions.md
+├── agents/
+│   ├── code-reviewer.md     → ~/agent-skills/agents/code-reviewer.md
+│   ├── test-engineer.md     → ~/agent-skills/agents/test-engineer.md
+│   └── security-auditor.md  → ~/agent-skills/agents/security-auditor.md
+└── skills/
+    ├── spec-driven-development/  → ~/agent-skills/skills/spec-driven-development/
+    └── ...  (all skills)
+```
+
+**Global instructions (no per-project setup needed)**
+
+To activate skills across *all* projects without running the script, add this to your VSCode user `settings.json` (`File → Preferences → Settings → Open JSON`):
+
+```json
+"github.copilot.chat.codeGeneration.instructions": [
+  { "file": "/absolute/path/to/agent-skills/copilot-instructions.md" }
+]
+```
+
+On WSL, use the Windows path: `C:\\Users\\you\\...\\agent-skills\\copilot-instructions.md`
 
 </details>
 
@@ -266,7 +308,9 @@ agent-skills/
 ├── references/                        # 4 supplementary checklists
 ├── hooks/                             # Session lifecycle hooks
 ├── .claude/commands/                  # 7 slash commands
-└── docs/                              # Setup guides per tool
+├── docs/                              # Setup guides per tool
+├── copilot-instructions.md            # Central Copilot instructions (symlink target for all projects)
+└── setup-project.sh                   # Wires a project to this repo via symlinks (WSL/Linux/macOS)
 ```
 
 ---

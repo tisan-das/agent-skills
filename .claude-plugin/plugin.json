@@ -5,8 +5,8 @@
   "author": {
     "name": "Addy Osmani"
   },
-  "homepage": "https://github.com/addyosmani/agent-skills",
-  "repository": "https://github.com/addyosmani/agent-skills",
+  "homepage": "https://github.com/tisan-das/agent-skills",
+  "repository": "https://github.com/tisan-das/agent-skills",
   "license": "MIT",
   "commands": "./.claude/commands"
 }
