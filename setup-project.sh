@@ -67,13 +67,27 @@ for skill_dir in "$AGENT_SKILLS_DIR/skills"/*/; do
   link "$skill_dir" "$TARGET_DIR/.github/skills/$skill_name"
 done
 
+# ── .github/prompts/*.prompt.md ──────────────────────────────────────────────
+mkdir -p "$TARGET_DIR/.github/prompts"
+for prompt_file in "$AGENT_SKILLS_DIR/.github/prompts"/*.prompt.md; do
+  [[ -f "$prompt_file" ]] || continue
+  link "$prompt_file" "$TARGET_DIR/.github/prompts/$(basename "$prompt_file")"
+done
+
+# ── .claude/commands/*.md ────────────────────────────────────────────────────
+mkdir -p "$TARGET_DIR/.claude/commands"
+for cmd_file in "$AGENT_SKILLS_DIR/.claude/commands"/*.md; do
+  [[ -f "$cmd_file" ]] || continue
+  link "$cmd_file" "$TARGET_DIR/.claude/commands/$(basename "$cmd_file")"
+done
+
 echo ""
 echo "Done — $linked linked, $updated updated, $skipped skipped."
 echo ""
 echo "Next steps:"
 echo ""
-echo "  1. Commit the symlinks (or add .github/agents/ .github/skills/ to .gitignore"
-echo "     if you don't want them tracked in the project repo)."
+echo "  1. Commit the symlinks (or add .github/agents/ .github/skills/ .github/prompts/"
+echo "     .claude/commands/ to .gitignore if you don't want them tracked in the project repo)."
 echo ""
 echo "  2. For global Copilot instructions across ALL projects (no per-project setup),"
 echo "     add this to your VSCode user settings (%APPDATA%/Code/User/settings.json"
