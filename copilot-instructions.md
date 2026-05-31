@@ -31,6 +31,8 @@ When a task arrives, identify the phase and follow the corresponding skill:
 | Writing or running tests | test-driven-development |
 | Browser-based testing | browser-testing-with-devtools |
 | Something broke | debugging-and-error-recovery |
+| Infrastructure / CE failure analysis | ce-log-triage |
+| Writing an RCA / incident postmortem | rca-writeup |
 | Reviewing code before merge | code-review-and-quality |
 | Security concerns | security-and-hardening |
 | Performance concerns | performance-optimization |
