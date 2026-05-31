@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git *)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:mariozechner.at)",
+      "WebFetch(domain:dev.to)"
+    ]
+  }
+}
