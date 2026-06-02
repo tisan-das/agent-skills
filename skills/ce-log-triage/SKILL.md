@@ -2,22 +2,19 @@
 name: ce-log-triage
 description: >
   Root-cause Teradata Compute Engine (CE) failures from logs. Use this skill
-  whenever a CE (IDs like CEAMGPSCTEAM0009R, CEAMTESTSIT10003Q) or its site
-  (IDs like TDICAM53386PP80) is stuck, failed, or not starting — states such as
-  provisioning_failed, down/hardstop, down/tdmaint, stopped, NOT_PROVISIONED, or
-  "configuring / expand vconfig", and stuck control-plane states such as
-  NETWORK_PROVISIONING or MANIFEST_CREATING — and the user provides or points at
-  CloudWatch Logs Insights JSON exports (logs-insights-results__NN_.json), a
-  Linux `messages` syslog, or a Salt `minion` log. Trigger it for ANY request
-  shaped like "why is this CE failing / stuck / not starting", "analyze these CE
-  logs", "what's the root cause", "this engine won't provision", or a pasted CE
-  ID plus a state — even if the user does not name a state, a file, or this skill
-  explicitly. The CE lifecycle is split across several services that each live in
-  a DIFFERENT AWS account, and the failure trail crosses those boundaries, so do
-  NOT analyze from general AWS knowledge or guess from the symptom alone — follow
-  this skill to identify which layer the logs belong to, read the right log the
-  right way, walk the correct state machine, and match the evidence against a
-  catalog of previously diagnosed failure signatures before declaring a cause.
+  whenever a CE (e.g. CEAMGPSCTEAM0009R) or its site (e.g. TDICAM53386PP80)
+  is stuck, failed, or won't start — states like provisioning_failed,
+  down/hardstop, down/tdmaint, stopped, NOT_PROVISIONED, "configuring /
+  expand vconfig", NETWORK_PROVISIONING, or MANIFEST_CREATING — and the user
+  provides or points at CloudWatch Logs Insights JSON exports
+  (logs-insights-results__NN_.json), a Linux `messages` syslog, or a Salt
+  `minion` log. Also trigger for ANY request like "why is this CE failing /
+  stuck / not starting", "analyze these CE logs", "what's the root cause",
+  or "this engine won't provision" — even just a pasted CE ID plus a state,
+  and even if no file, state, or this skill is named explicitly. The failure
+  trail crosses several AWS accounts and two layers (control-plane vs
+  on-host), so follow this skill rather than guessing from general AWS
+  knowledge or the symptom alone.
 license: internal
 ---
 
