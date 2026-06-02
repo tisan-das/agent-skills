@@ -4,22 +4,16 @@ description: >
   Turn a COMPLETED log/incident investigation into a structured, shareable
   root-cause document. Use this skill whenever an analysis has reached a
   conclusion and the user wants it written up — triggers include "write this
-  up", "draft an RCA", "write a postmortem", "incident report", "document this
-  for the ticket", "summarize the root cause for the team / for my manager", or
-  any request to make a finding legible to people who were not in the logs.
-  It is the natural second step after the `ce-log-triage` skill: that skill
-  reaches the conclusion, this skill formats it, so offer it proactively the
-  moment a triage lands on a cause. Reach for it even when the user does not say
-  the word "RCA" — if they have a root cause and an audience, this is the skill.
-  Two hard boundaries: (1) this skill does NOT perform the investigation — if the
-  analysis is not actually finished, do not invent a root cause; say what is
-  still missing and offer to run `ce-log-triage` first. (2) Never fabricate
-  identifiers, timestamps, or evidence to make the document look complete; a
-  precise "the logs cannot prove this" is the house style, a confident guess is
-  not. Applies to Teradata Compute Engine (CE) failures and the surrounding AWS
-  infrastructure (PrivateLink/DNS, EKS/Velero restores, DynamoDB, ECS,
-  networking, on-host PDE/TPA/Salt), and the template generalizes to any infra
-  incident.
+  up", "draft an RCA", "write a postmortem", "incident report", "document
+  this for the ticket", or "summarize the root cause for the team / for my
+  manager", and any request to make a finding legible to people who weren't
+  in the logs. It is the natural second step after the `ce-log-triage` skill
+  — offer it proactively the moment a triage lands on a cause, even when the
+  user doesn't say "RCA". Do NOT use it to run the investigation: if the
+  analysis isn't finished, don't invent a root cause — say what's missing
+  and offer to run `ce-log-triage` first. Applies to Teradata Compute Engine
+  (CE) failures and surrounding AWS infra (PrivateLink/DNS, EKS/Velero,
+  DynamoDB, ECS, PDE/TPA/Salt); generalizes to any infra incident.
 license: internal
 ---
 
