@@ -1,19 +1,6 @@
 ---
 name: rca-writeup
-description: >
-  Turn a COMPLETED log/incident investigation into a structured, shareable
-  root-cause document. Use this skill whenever an analysis has reached a
-  conclusion and the user wants it written up — triggers include "write this
-  up", "draft an RCA", "write a postmortem", "incident report", "document
-  this for the ticket", or "summarize the root cause for the team / for my
-  manager", and any request to make a finding legible to people who weren't
-  in the logs. It is the natural second step after the `ce-log-triage` skill
-  — offer it proactively the moment a triage lands on a cause, even when the
-  user doesn't say "RCA". Do NOT use it to run the investigation: if the
-  analysis isn't finished, don't invent a root cause — say what's missing
-  and offer to run `ce-log-triage` first. Applies to Teradata Compute Engine
-  (CE) failures and surrounding AWS infra (PrivateLink/DNS, EKS/Velero,
-  DynamoDB, ECS, PDE/TPA/Salt); generalizes to any infra incident.
+description: Turn a COMPLETED log/incident investigation into a structured, shareable root-cause document. Use when an analysis has reached a conclusion and the user wants it written up — triggers include "write this up", "draft an RCA", "write a postmortem", "incident report", "document this for the ticket", or "summarize the root cause for the team / for my manager", and any request to make a finding legible to people who weren't in the logs. It is the natural second step after the `ce-log-triage` skill — offer it proactively the moment a triage lands on a cause, even when the user doesn't say "RCA". Do NOT use it to run the investigation — if the analysis isn't finished, don't invent a root cause; say what's missing and offer to run `ce-log-triage` first. Applies to Teradata Compute Engine (CE) failures and surrounding AWS infra (PrivateLink/DNS, EKS/Velero, DynamoDB, ECS, PDE/TPA/Salt); generalizes to any infra incident.
 license: internal
 ---
 
