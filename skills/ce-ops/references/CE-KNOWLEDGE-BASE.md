@@ -59,17 +59,34 @@ The most important example is the pooled OMS gate — see [§5.6](#56-behaviour-
 
 ### Verification stamp (last pass)
 
-| Repo | Branch checked out | Last commit date |
-|---|---|---|
-| `cog-global-compute` | `GPSC-3907` (fork of `ga2base`) | 2026-07-29 |
-| `accp-metadata-service` | `gav2-release` (`version-1.1.2`) | 2026-07-28 |
-| `accp-network-service` | `azurepreprod` (`version-2.0.0-rc1`) | 2026-07-12 |
-| `svc-vce-lmo` | `oms-preflight-checks` | 2026-07-09 |
-| `cog-compute-engine-pooling-service` | `azure-preprod-v2` | 2026-07-22 |
-| `cog-compute-metering` | `main2` (`2.6.4`) | 2026-06-23 |
-| `cog-compute-engine-autoscaler` | `main` (`v1.0.6`) | 2026-07-27 |
-| `avcd-vce-engine-configure` | `develop` | 2026-05-26 |
-| `avcd-vce-engine-provision` | `master` (`v0.2.18`) | 2026-04-06 |
+| Repo | Branch checked out | Commit | Last commit date |
+|---|---|---|---|
+| `cog-global-compute` | `GPSC-3907` (fork of `ga2base`) | `TBD` | 2026-07-29 |
+| `accp-metadata-service` | `gav2-release` (`version-1.1.2`) | `TBD` | 2026-07-28 |
+| `accp-network-service` | `azurepreprod` (`version-2.0.0-rc1`) | `TBD` | 2026-07-12 |
+| `svc-vce-lmo` | `oms-preflight-checks` | `TBD` | 2026-07-09 |
+| `cog-compute-engine-pooling-service` | `azure-preprod-v2` | `TBD` | 2026-07-22 |
+| `cog-compute-metering` | `main2` (`2.6.4`) | `TBD` | 2026-06-23 |
+| `cog-compute-engine-autoscaler` | `main` (`v1.0.6`) | `TBD` | 2026-07-27 |
+| `avcd-vce-engine-configure` | `develop` | `TBD` | 2026-05-26 |
+| `avcd-vce-engine-provision` | `master` (`v0.2.18`) | `TBD` | 2026-04-06 |
+
+> ⚠️ **The branch is the scope of every `[current]` claim; the commit is what makes it
+> reproducible.** Only one of these repos is on plain `main` — the rest sit on release,
+> environment, or Jira-ticket branches, so a `[current]` claim verified on `GPSC-3907` says
+> nothing about `ga2base`, and the `develop`-only defects in §9 may not exist on your branch.
+> Branch names are ephemeral: feature branches like `GPSC-3907` and `oms-preflight-checks` get
+> merged and deleted, after which the branch column no longer resolves but the commit still
+> does. **Fill the `TBD` cells on the next verification pass** and treat the SHA as the durable
+> anchor — from the workspace root:
+> ```bash
+> for r in cog-global-compute accp-metadata-service accp-network-service svc-vce-lmo \
+>          cog-compute-engine-pooling-service cog-compute-metering \
+>          cog-compute-engine-autoscaler avcd-vce-engine-configure avcd-vce-engine-provision; do
+>   [ -d "$r/.git" ] && printf '%-38s %s %s\n' "$r" "$(git -C "$r" rev-parse --short HEAD)" \
+>     "$(git -C "$r" rev-parse --abbrev-ref HEAD)"
+> done
+> ```
 
 > ⚠️ **Line numbers drift between branches.** All `file.go:NNN` references are anchors for
 > `grep`, not addresses. Search for the quoted symbol or comment instead. Where a reference was
