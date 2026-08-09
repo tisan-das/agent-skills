@@ -1,0 +1,99 @@
+[
+  {
+    "@timestamp": "2026-05-28T07:22:39.000Z",
+    "@message": {
+      "level": "INFO",
+      "operation": "PRIVATE_LINK_DEPLOY",
+      "status": "started",
+      "ce_siteid": "TDICAM00000EX01",
+      "compute_engine_config_id": "CEAMEXAMPLE10001X",
+      "msg": "create private link accepted; DEDICATED 1X"
+    }
+  },
+  {
+    "@timestamp": "2026-05-28T07:22:39.612Z",
+    "@message": {
+      "level": "ERROR",
+      "operation": "servicenow",
+      "status": "failed",
+      "error_code": "400",
+      "ce_siteid": "TDICAM00000EX01",
+      "msg": "Org not found",
+      "org": "EXAMPLE1"
+    }
+  },
+  {
+    "@timestamp": "2026-05-28T07:22:55.400Z",
+    "@message": {
+      "level": "INFO",
+      "operation": "network",
+      "status": "ok",
+      "ce_siteid": "TDICAM00000EX01",
+      "msg": "no existing slot; created NLB for site"
+    }
+  },
+  {
+    "@timestamp": "2026-05-28T07:25:53.102Z",
+    "@message": {
+      "level": "INFO",
+      "operation": "network",
+      "status": "ok",
+      "ce_siteid": "TDICAM00000EX01",
+      "msg": "allowed accounts updated on endpoint service; private DNS enabled"
+    }
+  },
+  {
+    "@timestamp": "2026-05-28T07:25:54.018Z",
+    "@message": {
+      "level": "INFO",
+      "operation": "network",
+      "status": "ok",
+      "ce_siteid": "TDICAM00000EX01",
+      "msg": "TXT record created to prove domain ownership"
+    }
+  },
+  {
+    "@timestamp": "2026-05-28T07:26:00.221Z",
+    "@message": {
+      "level": "INFO",
+      "operation": "network",
+      "status": "waiting",
+      "ce_siteid": "TDICAM00000EX01",
+      "msg": "waiting for AWS private DNS verification"
+    }
+  },
+  {
+    "@timestamp": "2026-05-28T07:36:03.441Z",
+    "@message": {
+      "level": "ERROR",
+      "operation": "slot_assignment",
+      "status": "failed",
+      "error_code": "AWS-AssignSlot-Error",
+      "ce_siteid": "TDICAM00000EX01",
+      "compute_engine_config_id": "CEAMEXAMPLE10001X",
+      "location": "ce_manager.go:122",
+      "msg": "private DNS verification timed out after ~10 minutes"
+    }
+  },
+  {
+    "@timestamp": "2026-05-28T07:36:04.119Z",
+    "@message": {
+      "level": "INFO",
+      "operation": "metadata",
+      "status": "patched",
+      "ce_siteid": "TDICAM00000EX01",
+      "msg": "status PRIVATE_LINK_DEPLOY FAILED"
+    }
+  },
+  {
+    "@timestamp": "2026-05-28T07:48:20.003Z",
+    "@message": {
+      "level": "INFO",
+      "operation": "poll",
+      "status": "NOT_PROVISIONED",
+      "connectivity": "FAILED",
+      "ce_siteid": "TDICAM00000EX01",
+      "compute_engine_config_id": "CEAMEXAMPLE10001X"
+    }
+  }
+]

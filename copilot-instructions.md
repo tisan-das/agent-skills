@@ -1,6 +1,6 @@
 # GitHub Copilot Instructions
 
-Powered by [agent-skills](https://github.com/tisan-das/agent-skills) — engineering workflow skills for AI coding agents.
+Powered by [agent-skills](https://github.com/addyosmani/agent-skills) — engineering workflow skills for AI coding agents.
 
 ## Core Behaviors (always active)
 
@@ -31,8 +31,8 @@ When a task arrives, identify the phase and follow the corresponding skill:
 | Writing or running tests | test-driven-development |
 | Browser-based testing | browser-testing-with-devtools |
 | Something broke | debugging-and-error-recovery |
-| Infrastructure / CE failure analysis | ce-log-triage |
-| Writing an RCA / incident postmortem | rca-writeup |
+| Infrastructure / CE failure analysis | ce-ops |
+| Writing an RCA / incident postmortem | ce-ops |
 | Reviewing code before merge | code-review-and-quality |
 | Security concerns | security-and-hardening |
 | Performance concerns | performance-optimization |
