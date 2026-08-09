@@ -24,7 +24,7 @@ docs/         → Setup guides for different tools
 **Verify:** browser-testing-with-devtools, debugging-and-error-recovery
 **Review:** code-review-and-quality, code-simplification, security-and-hardening, performance-optimization
 **Ship:** git-workflow-and-versioning, ci-cd-and-automation, deprecation-and-migration, documentation-and-adrs, observability-and-instrumentation, shipping-and-launch
-**Operate:** ce-log-triage, rca-writeup
+**Operate:** ce-ops
 
 ## Conventions
 
@@ -52,10 +52,22 @@ PRs target the upstream repository's default branch. In a typical fork setup the
 - Before opening a PR, search the upstream repository's open PRs and issues for work that touches the same files or rules. If any overlaps, coordinate (build on it, align your rules with it, or rebase after it merges) instead of opening a conflicting PR.
 - Prefer small, focused PRs over large refactors of widely shared files (for example, files under `scripts/`), which are more likely to collide with in-flight work.
 
+## Publishing internal content
+
+`skills/ce-ops` is `license: internal`. It carries real AWS account IDs, internal hostnames including production endpoints, ~130 Jira keys, and internal service topology.
+
+**A fork of a public repository is public by default, so `git push` publishes as surely as a PR does.** On this checkout `develop` tracks `origin/main`, so a bare `git push` writes internal content to the fork on GitHub. Treat pushing as publication:
+
+- Confirm the destination remote is private before pushing anything that contains `skills/ce-ops`.
+- Never assume "it's only my fork" makes it non-public.
+- Git history is not a delete button: once pushed, removing the file in a later commit does not unpublish it.
+
 ## Boundaries
 
 - Always: Run the CONTRIBUTING.md pre-flight checks before creating a new skill directory
 - Always: Follow the skill-anatomy.md format for new skills
 - Always: Check the upstream repo's open PRs and issues for overlap before opening a new PR
+- Never: Publish `skills/ce-ops` — no upstream PR, and no push to any remote that is not confirmed private. It is `license: internal` and carries real account IDs, production hostnames, and Jira keys
+- Always: Ask before running `git push` on a branch containing `skills/ce-ops`, and name the destination remote in the question
 - Never: Add skills that are vague advice instead of actionable processes
 - Never: Duplicate content between skills — reference other skills instead

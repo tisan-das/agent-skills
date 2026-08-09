@@ -1,0 +1,87 @@
+{
+  "skill_name": "ce-ops",
+  "_note": "Tier-3 injects SKILL.md's text as the system prompt and materializes only files[] into a throwaway workspace. ce-ops is a router skill, so scripts/, triage/, rca/ and references/ are NOT reachable during a behavioral run. Every expectation below is therefore grounded in SKILL.md plus the fixture - do not add expectations that require reading a bundled module, or the eval will grade the harness instead of the skill.",
+  "trigger": {
+    "positive": [
+      {
+        "prompt": "CEAMEXAMPLE10001X has been sitting in provisioning_failed for 40 minutes and nobody knows why",
+        "top_k": 3
+      },
+      {
+        "prompt": "Site TDICAM00000EX01 went down/hardstop overnight and will not come back up",
+        "top_k": 3
+      },
+      {
+        "prompt": "Here is the CloudWatch export for a compute engine stuck at NOT_PROVISIONED - what actually failed?",
+        "top_k": 3
+      },
+      {
+        "prompt": "How does pooled provisioning work, and who writes the state the console renders?",
+        "top_k": 3
+      },
+      {
+        "prompt": "The engine autoscaled and now the console shows STOPPED - is that a real outage?",
+        "top_k": 3
+      },
+      {
+        "prompt": "Draft the RCA for the CEAMEXAMPLE10001X private link failure so I can close the Jira",
+        "top_k": 3
+      }
+    ],
+    "negative": [
+      {
+        "prompt": "Review this Go change in the CE provisioning service before I merge it",
+        "owner": "code-review-and-quality"
+      },
+      {
+        "prompt": "Add structured logging and metrics to the pooling service so we can see this next time",
+        "owner": "observability-and-instrumentation"
+      },
+      {
+        "prompt": "Design the NLB and PrivateLink topology for a new region",
+        "owner": "api-and-interface-design"
+      },
+      {
+        "prompt": "Write a failing test for this bug before fixing it",
+        "owner": "test-driven-development"
+      }
+    ]
+  },
+  "evals": [
+    {
+      "id": 1,
+      "kind": "execution",
+      "prompt": "This compute engine is stuck. Work out why from logs-insights-results__01_.json and tell me the root cause.",
+      "expected_output": "A triage that classifies the fault domain, names the deciding error with its exact code and code location, separates the secondary noise from the cause, and states what the logs cannot prove",
+      "files": [
+        "ce-ops/logs-insights-results__01_.json"
+      ],
+      "expectations": [
+        "Reaches for the skill's bundled scripts/parse_cloudwatch.py rather than hand-rolling JSON parsing; if that script is not reachable from the workspace, says so explicitly instead of silently substituting its own parser",
+        "Classifies the failure as a control-plane (domain D1) problem rather than an on-host one",
+        "Names the deciding evidence exactly: AWS-AssignSlot-Error at 07:36:03 from ce_manager.go:122, after the private DNS verification wait that began 07:26:00",
+        "Explicitly quarantines the ServiceNow 'Org not found' 400 as secondary noise that did not block provisioning",
+        "States what the logs cannot prove (why AWS never verified the TXT record) instead of asserting a single cause with false confidence",
+        "Every timestamp cited is UTC"
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "execution",
+      "prompt": "The investigation in findings-summary.md is finished. Write it up so I can post it on the ticket.",
+      "expected_output": "An RCA following the module's template: verdict first with its R-class, a UTC timeline whose rows say what each event proves, the deciding evidence quoted, a 'not the cause' section, and a named observability gap",
+      "files": [
+        "ce-ops/findings-summary.md"
+      ],
+      "expectations": [
+        "Leads with the verdict in one line and names the cause class (R6, or R1 explicitly considered)",
+        "Timeline rows are UTC and pair each event with what it proves, not just what the log said",
+        "Quotes the deciding evidence verbatim (AWS-AssignSlot-Error / ce_manager.go:122) rather than paraphrasing it",
+        "Keeps the ServiceNow 'Org not found' 400 visibly separate from the root cause, stating explicitly that it did not block provisioning",
+        "Names the observability gap and says it should be filed as its own ticket",
+        "Carries the caveats forward as caveats instead of resolving them into a confident single cause",
+        "Does not invent any identifier, timestamp, or ARN that is absent from the findings"
+      ]
+    }
+  ]
+}

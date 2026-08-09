@@ -57,8 +57,7 @@ const REQUIRED_SECTIONS = [
 const SECTION_EXEMPT_SKILLS = {
   'using-agent-skills': 'Meta-skill — orchestrates other skills; When-to-Use and Verification are not applicable to a routing document.',
   'idea-refine':        'Legacy structure predating skill-anatomy.md — uses How-It-Works/Usage/Anti-patterns instead of standard headings. Tracked for conformance in https://github.com/addyosmani/agent-skills/issues',
-  'ce-log-triage':      'Domain-specific infrastructure triage playbook — uses architecture-reference + state-machine + failure-signature-catalog structure. Covering sections embedded within the triage workflow.',
-  'rca-writeup':        'Domain-specific RCA formatting template — uses input-contract + output-template + worked-examples structure. Guidance embedded within the formatting workflow.',
+  'ce-ops':             'Domain-specific infrastructure corpus + triage pipeline — SKILL.md is a router over bundled reference/triage/rca modules, so it uses an orientation + document-map + pipeline structure. The standard sections live in the modules it routes to.',
 };
 
 // Regex patterns that indicate an explicit cross-skill reference.

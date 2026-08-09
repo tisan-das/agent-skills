@@ -7,3 +7,6 @@ node_modules/
 .claude/sdd-cache/
 evals/results/
 __pycache__/
+
+# Scratch space for skill drafts and imported bundles (may contain internal data)
+drafts/

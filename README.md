@@ -72,7 +72,7 @@ Prefer a native integration? Pick your tool below.
 **Marketplace install:**
 
 ```
-/plugin marketplace add tisan-das/agent-skills
+/plugin marketplace add addyosmani/agent-skills
 /plugin install agent-skills@addy-agent-skills
 ```
 
@@ -90,7 +90,7 @@ Prefer a native integration? Pick your tool below.
 **Local / development:**
 
 ```bash
-git clone https://github.com/tisan-das/agent-skills.git
+git clone https://github.com/addyosmani/agent-skills.git
 claude --plugin-dir /path/to/agent-skills
 ```
 
@@ -131,7 +131,7 @@ Install as native skills for auto-discovery, or add to `GEMINI.md` for persisten
 **Install from the repo:**
 
 ```bash
-gemini skills install https://github.com/tisan-das/agent-skills.git --path skills
+gemini skills install https://github.com/addyosmani/agent-skills.git --path skills
 ```
 
 **Install from a local clone:**
@@ -169,7 +169,7 @@ Keep agent-skills cloned once and wire every project to it via symlinks — upda
 
 ```bash
 # Clone once to a permanent location
-git clone https://github.com/tisan-das/agent-skills.git ~/agent-skills
+git clone https://github.com/addyosmani/agent-skills.git ~/agent-skills
 
 # Wire a project (run from inside the project, or pass the path)
 cd ~/projects/my-app
@@ -258,9 +258,11 @@ Already installed? How you roll the pack out depends on your codebase. The **[Ad
 
 ---
 
-## All 26 Skills
+## All 25 Skills
 
-The commands above are entry points. The pack includes 26 skills total — 25 lifecycle and operations skills plus the `using-agent-skills` meta-skill. Each skill is a structured workflow with steps, verification gates, and anti-rationalization tables. You can also reference any skill directly.
+The commands above are entry points. This repository carries 25 skills — 23 lifecycle skills, the `using-agent-skills` meta-skill, and one internal operations skill. Each skill is a structured workflow with steps, verification gates, and anti-rationalization tables. You can also reference any skill directly.
+
+> **The install commands above deliver 24 skills.** `ce-ops` is marked `license: internal` and is deliberately excluded from the public pack — it carries organisation-specific infrastructure knowledge and is not distributed. Everything else on this page is in the public pack.
 
 ### Meta - Discover which skill applies
 
@@ -323,10 +325,11 @@ The commands above are entry points. The pack includes 26 skills total — 25 li
 
 ### Operate - Respond to production incidents
 
+*Internal to this repository — not included in the public install.*
+
 | Skill | What It Does | Use When |
 |-------|-------------|----------|
-| [ce-log-triage](skills/ce-log-triage/SKILL.md) | Root-cause CE failures from CloudWatch/syslog — walks state machines, matches failure signatures across AWS account boundaries | CE provisioning failures, stuck/down states, log analysis |
-| [rca-writeup](skills/rca-writeup/SKILL.md) | Converts a completed log investigation into a structured, shareable RCA document | After root cause is found — drafting postmortems, incident reports, or ticket summaries |
+| [ce-ops](skills/ce-ops/SKILL.md) | Teradata CE platform knowledge base, log-forensics triage, and RCA writeup in one pipeline — walks state machines, matches ~120 known failure signatures, then turns the verdict into a shareable writeup | CE provisioning failures, stuck/down states, log analysis, architecture questions, drafting the postmortem afterwards |
 
 ---
 
@@ -396,7 +399,7 @@ Every skill follows a consistent anatomy:
 
 ```
 agent-skills/
-├── skills/                            # 26 skills (25 lifecycle/ops + 1 meta)
+├── skills/                            # 25 skills (23 lifecycle + 1 meta + 1 internal)
 │   ├── interview-me/                  #   Define
 │   ├── idea-refine/                   #   Define
 │   ├── spec-driven-development/       #   Define
@@ -420,8 +423,7 @@ agent-skills/
 │   ├── documentation-and-adrs/        #   Ship
 │   ├── observability-and-instrumentation/ # Ship
 │   ├── shipping-and-launch/           #   Ship
-│   ├── ce-log-triage/                 #   Operate
-│   ├── rca-writeup/                   #   Operate
+│   ├── ce-ops/                        #   Operate
 │   └── using-agent-skills/            #   Meta: how to use this pack
 ├── agents/                            # 4 specialist personas
 ├── references/                        # 7 supplementary checklists
