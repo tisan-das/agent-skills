@@ -28,18 +28,19 @@
 | Know what is broken by design | [§9 Defect & design-gap register](#9-defect--design-gap-register) |
 | Know what this document does *not* cover | [§10.3 Known limits](#103-known-limits-of-this-document) |
 
-**Companion documents in this repo** (deeper, narrower):
+**Companion documents bundled with this skill** (same `references/` directory — deeper, narrower):
 
 | Document | Covers |
 |---|---|
 | `CE-PROVISIONING-DEPROVISIONING.md` | Repo-by-repo provisioning/deprovisioning walkthrough, API matrix, CFN/Salt/Packer detail |
 | `CE-LIFECYCLE-AND-AUTOSCALE-ANALYSIS.md` | Exhaustive notification catalogue (H1–H29, A1–A13), the six state machines, autoscale internals, the "degraded" defect chain |
 | `diagrams-mermaid-code.md` | 8 architecture/sequence diagrams |
-| `script/log-extract/ce-provisioning-sequence.md` | The single provisioning sequence diagram (OMS wait + QG independence) |
-| `script/log-extract/ce-failure-decision-tree.md` | Failure decision tree (which component failed → what status) |
 
-This KB is the **umbrella**: it summarises those, adds everything they don't cover
-(onboarding/identity, incidents, runbooks, cross-service auth), and cross-references them.
+Provisioning sequence detail and the failure decision tree also live in-package as
+**§4 flows F4–F6** and **§8.3** — use those; do not expect extra files outside this skill.
+
+This KB is the **umbrella**: it summarises the companions, adds everything they don't
+cover (onboarding/identity, incidents, runbooks, cross-service auth), and cross-references them.
 
 ---
 
@@ -59,36 +60,35 @@ The most important example is the pooled OMS gate — see [§5.6](#56-behaviour-
 
 ### Verification stamp (last pass)
 
-| Repo | Branch checked out | Commit | Last commit date |
-|---|---|---|---|
-| `cog-global-compute` | `GPSC-3907` (fork of `ga2base`) | `TBD` | 2026-07-29 |
-| `accp-metadata-service` | `gav2-release` (`version-1.1.2`) | `TBD` | 2026-07-28 |
-| `accp-network-service` | `azurepreprod` (`version-2.0.0-rc1`) | `TBD` | 2026-07-12 |
-| `svc-vce-lmo` | `oms-preflight-checks` | `TBD` | 2026-07-09 |
-| `cog-compute-engine-pooling-service` | `azure-preprod-v2` | `TBD` | 2026-07-22 |
-| `cog-compute-metering` | `main2` (`2.6.4`) | `TBD` | 2026-06-23 |
-| `cog-compute-engine-autoscaler` | `main` (`v1.0.6`) | `TBD` | 2026-07-27 |
-| `avcd-vce-engine-configure` | `develop` | `TBD` | 2026-05-26 |
-| `avcd-vce-engine-provision` | `master` (`v0.2.18`) | `TBD` | 2026-04-06 |
+`[current]` means: behaviour in the **tree identified by Commit** at Verified date.
+**Commit is required** for reproducibility. Prefer **deploy env** and **release/version
+tag** when saying whether a claim applies to an incident — not git branch names. In-body
+text that still names a branch is historical authoring scope from this pass; when you
+re-verify, rewrite those lines to SHA, version, or env.
 
-> ⚠️ **The branch is the scope of every `[current]` claim; the commit is what makes it
-> reproducible.** Only one of these repos is on plain `main` — the rest sit on release,
-> environment, or Jira-ticket branches, so a `[current]` claim verified on `GPSC-3907` says
-> nothing about `ga2base`, and the `develop`-only defects in §9 may not exist on your branch.
-> Branch names are ephemeral: feature branches like `GPSC-3907` and `oms-preflight-checks` get
-> merged and deleted, after which the branch column no longer resolves but the commit still
-> does. **Fill the `TBD` cells on the next verification pass** and treat the SHA as the durable
-> anchor — from the workspace root:
+| Repo | Commit | Version / note | Verified |
+|---|---|---|---|
+| `cog-global-compute` | `TBD` | — | 2026-07-29 |
+| `accp-metadata-service` | `TBD` | `version-1.1.2` | 2026-07-28 |
+| `accp-network-service` | `TBD` | `version-2.0.0-rc1` | 2026-07-12 |
+| `svc-vce-lmo` | `TBD` | — | 2026-07-09 |
+| `cog-compute-engine-pooling-service` | `TBD` | — | 2026-07-22 |
+| `cog-compute-metering` | `TBD` | `2.6.4` | 2026-06-23 |
+| `cog-compute-engine-autoscaler` | `TBD` | `v1.0.6` | 2026-07-27 |
+| `avcd-vce-engine-configure` | `TBD` | — | 2026-05-26 |
+| `avcd-vce-engine-provision` | `TBD` | `v0.2.18` | 2026-04-06 |
+
+> ⚠️ **Fill every `TBD` on the next verification pass.** Until then, treat `[current]` and
+> ✅ markers as provisional. From a workspace that checks out these repos:
 > ```bash
 > for r in cog-global-compute accp-metadata-service accp-network-service svc-vce-lmo \
 >          cog-compute-engine-pooling-service cog-compute-metering \
 >          cog-compute-engine-autoscaler avcd-vce-engine-configure avcd-vce-engine-provision; do
->   [ -d "$r/.git" ] && printf '%-38s %s %s\n' "$r" "$(git -C "$r" rev-parse --short HEAD)" \
->     "$(git -C "$r" rev-parse --abbrev-ref HEAD)"
+>   [ -d "$r/.git" ] && printf '%-38s %s\n' "$r" "$(git -C "$r" rev-parse --short HEAD)"
 > done
 > ```
 
-> ⚠️ **Line numbers drift between branches.** All `file.go:NNN` references are anchors for
+> ⚠️ **Line numbers drift across trees.** All `file.go:NNN` references are anchors for
 > `grep`, not addresses. Search for the quoted symbol or comment instead. Where a reference was
 > re-verified in the working tree it is marked ✅; where the symbol has since been renamed or
 > removed it is marked ⚠️.
@@ -2578,9 +2578,9 @@ CloudWatch retention on these groups is **7 days** in non-prod — capture evide
 
 ### 8.6 Bulk cleanup
 
-`script/log-extract/cleanup_ce_configs.sh` deletes every CE on a site except a `--keep`
-comma-separated list, given an env (dev/qa/preprod/prod) and a GCS JWT (from `creds.env` or an
-argument). Phase 0 lists configs, then cluster delete → poll → config delete. A common snag is
+Bulk site cleanup (delete every CE config on a site except a keep-list, driven by env +
+GCS JWT) is **ops tooling in the service workspace — not shipped in this skill**. The
+usual sequence is: list configs → cluster delete → poll → config delete. A common snag is
 `cluster delete HTTP 409 — skipping poll, will try config delete`, which is the
 `deletableStates` guard from §F11.2 (the cluster is still `TERMINATING`).
 **Caution:** bulk cleanup has been observed to leave the site's ServiceNow registration in a
@@ -2705,11 +2705,11 @@ state that strands the next CE (§7.6).
 | `ce-assistant` | 5 | Sizing/cost advisory prototype |
 | `script`, `support`, `packer`, `image-bom`, `workspaces-event-scheduler` | 9 | Runbooks/wikis, provisioning-failure log analysis, image build, PR reviews |
 
-Raw extraction of these sessions (user prompts + assistant answers, tool noise stripped) was
-produced at `/tmp/ce-kb/extracted/` by `/tmp/ce-kb/extract.py`; re-run it to regenerate.
+Raw extraction of those sessions (prompts + answers, tool noise stripped) was a one-off
+authoring step; it is **not part of this skill** and is not required to use the KB.
 
 **Pass 2 — codebase verification.** Every structural claim was then re-checked against the
-checked-out repos (see [§0](#0-accuracy--code-drift) for the branch/commit stamp). That pass
+service repos (see [§0](#0-accuracy--code-drift) for the commit stamp). That pass
 found:
 
 | Category | Outcome |
@@ -2717,7 +2717,7 @@ found:
 | **Confirmed unchanged** | `MapPoolingStatus` table, `deletableStates`, `shouldUpdateState` / `isAzurePooledEngine` / `isAzureTelemetryStateRegression`, metering `cluster_health_problem_states` + `get_status` + fail-open leader election, `idp/init.sls` lines 1–4, `reconcileMetadataStateIfDiverged` Azure gate, GNS target-group/port table |
 | **Behaviour changed since the incidents** | The pooled OMS gate — rewritten by GPSC-3811 + GPSC-3735. Documented as §5.6 with both versions. |
 | **Whole subsystems that were missing** | Fleet health monitoring (F15), RCA (F16), gateway auto-remediation and the `RETRYING` state (F17), Global Database / DB-Admin API and `dbs_controls` (F18), warm-pool ML capacity forecasting and the pools API (F19), org/site sync from ServiceNow (F20), and the `ce-autoscaler` daemon's actual architecture (F9b) |
-| **Line-number drift** | Several `file.go:NNN` anchors no longer resolve on the current branches — hence the §0 warning to grep for symbols, not line numbers |
+| **Line-number drift** | Several `file.go:NNN` anchors no longer resolve on later trees — hence the §0 warning to grep for symbols, not line numbers |
 
 ### 10.3 Known limits of this document
 

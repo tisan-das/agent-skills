@@ -6,10 +6,9 @@ license: internal
 
 # CE Ops — know it, triage it, write it up
 
-This skill merges three formerly separate skills into one pipeline, built from
-**232 coding-agent sessions**, **535 Jira issues / 3,462 comments**, and a verification
-pass against the checked-out repos. Nothing here comes from READMEs (repeatedly proven
-stale — evidence only).
+This skill is one pipeline with three capabilities, built from **232 coding-agent
+sessions**, **535 Jira issues / 3,462 comments**, and a verification pass against the
+service repos. Nothing here comes from READMEs (repeatedly proven stale — evidence only).
 
 | Capability | Module | Job |
 |---|---|---|
@@ -185,13 +184,13 @@ These rules come from the documents themselves and from real investigation failu
   visual scaffolding, never as evidence. The **triage module's factual claims**
   (architecture, accounts, its "two state machines") are observation-era and sit low in
   the chain too — the corpus has already corrected one (GNS owner account; see the
-  bridge note in `triage/TRIAGE.md`) — but its *procedures, checkpointing protocol, and
+  precedence section in `triage/TRIAGE.md`) — but its *procedures, checkpointing protocol, and
   scripts* are canonical for log handling regardless. Several fixes **changed the state
   machine after the deep docs were written** — check KB §5.6 before describing pooled
   OMS gating, telemetry guards, or state transitions. Ultimate tie-break: the working
   tree itself.
 - **`file.go:NNN` references are grep anchors, not addresses.** Line numbers drift
-  between branches; search for the quoted symbol instead.
+  across trees; search for the quoted symbol instead.
 - **Never trust READMEs/SPECs/docstrings in these repos** — the KB documents specific
   load-bearing lies (`get_status()` claims to debounce and doesn't; `CopySecretForQueryGrid`
   claims to poll and doesn't). Code and logs only.
@@ -223,22 +222,16 @@ These rules come from the documents themselves and from real investigation failu
   installed, say so and deliver the Markdown from `rca/RCA-WRITEUP.md` instead — Markdown
   is the default deliverable and pastes cleanly into Jira, Slack, or Confluence.
 
-## Supersedes and boundaries
+## Boundaries
 
-- This skill **absorbs and supersedes** the standalone `ce-log-triage` and `rca-writeup`
-  skills: their content lives in `triage/` and `rca/` here, and references to those
-  skill names inside the corpus docs (SOP step S4, KB §8) resolve to these modules.
-  Both standalone skills have been removed from this repository. If a copy is still
-  installed anywhere else, **disable it** to avoid double-triggering.
-- Several paths referenced inside the documents are **not bundled** and live in the
-  `~/workspace/compute-engine` repo: `script/log-extract/ce-provisioning-sequence.md`
-  and `ce-failure-decision-tree.md` (plus `cleanup_ce_configs.sh` and `/tmp/ce-kb/`
-  extraction artifacts). If asked for them, say where they live rather than guessing —
-  the loss is small: KB §8.3 has its own triage decision tree, and the provisioning
-  sequence is covered by KB F4–F6 and Provisioning §7–§10. Likewise the per-service
-  `SPEC.md` / `STATE.md` / `HEALTH_MONITOR_REQUIREMENTS.md` files cited throughout are
-  **source-repo citations, not bundled docs** — treat them as grep anchors in the service
-  repos, and remember the corpus rule that these specs are not trustworthy on their own.
+- **Only paths under this skill directory are in package.** If a citation points outside
+  `skills/ce-ops/` (another workspace tree, a service checkout, `/tmp/…`, or a one-off
+  script), say that it is not shipped here — do not invent the file or its contents.
+  Triage and provisioning coverage that matters for incidents lives in-package: KB §8.3
+  (decision tree), KB F4–F6, and Provisioning §7–§10.
+- Per-service `SPEC.md` / `STATE.md` / `HEALTH_MONITOR_REQUIREMENTS.md` (and similar)
+  cited in the corpus are **source-repo grep anchors**, not bundled docs. They are not
+  authoritative on their own — prefer code paths, log lines, and the verified corpus.
 - Out of scope (shared vocabulary, different work): writing/reviewing application code
   for the CE services themselves, generic AWS/CloudWatch questions with no CE involved,
   NLB/PrivateLink *design* discussions, and non-CE systems (Kubernetes/EKS, RAG
@@ -246,44 +239,20 @@ These rules come from the documents themselves and from real investigation failu
 
 ## Maintenance
 
-The corpus in `references/` is a **snapshot**; the originals live in the user's
-`~/workspace/compute-engine` repo. When an investigation produces new knowledge, follow
-the docs' own maintenance contracts (KB §10.4, registry "Maintenance", SOP S10): new flow
-→ KB §4 as F21+; new incident → KB §7; new defect → KB §9; new endpoint/table/log group
-→ KB §8; behaviour change → KB §5.6 + mark the incident fixed; confirmed root cause →
-new registry row. Offer to update both the workspace original and the skill copy so they
-don't drift, and keep the three rules that made these documents useful: cite code paths
-or log lines (never a README), mark every claim as-deployed/current/inferred, and label
-every diagram arrow with the call and the reason.
+The corpus in `references/` is a **snapshot**. When an investigation produces new
+knowledge, follow the docs' own maintenance contracts (KB §10.4, registry "Maintenance",
+SOP S10): new flow → KB §4 as F21+; new incident → KB §7; new defect → KB §9; new
+endpoint/table/log group → KB §8; behaviour change → KB §5.6 + mark the incident fixed;
+confirmed root cause → new registry row. Prefer citing code paths or log lines (never a
+README), mark every claim as-deployed/current/inferred, and label diagram arrows with the
+call and the reason. Scope `[current]` claims with a **commit SHA** (and deploy env or
+version when known) — see KB §0 — not with a git branch name alone.
 
-Module provenance: `triage/` mirrors the former ce-log-triage skill — TRIAGE.md is its
-former SKILL.md body with paths adjusted, a merged-skill bridge (registry cross-map +
-precedence) added, and one account attribution corrected against the corpus (GNS owner —
-now fixed in `TROUBLESHOOTING.md`, `REFERENCE.md` A.2 and its box diagram, and
-`TRIAGE.md`; push the same correction to any workspace original). The bundled `scripts/` are a
-**rewrite** of that skill's versions, not a copy: `parse_cloudwatch.py` roughly doubled
-(adds `--site`, `--width`, `--limit`, `--no-skip`, and the stats/grep/show views) and
-`triage_syslog.sh` gained `set -euo pipefail` and the next-command hint. Both were then
-made encoding-safe — they emit ASCII arrows and tolerate a cp1252 or `LC_ALL=C` console,
-because the default `parse_cloudwatch.py` view previously died with UnicodeEncodeError on
-Windows. `rca/RCA-WRITEUP.md` **merges** the SOP/Jira artifacts with the former
-rca-writeup skill's body, which contributed the shareable-document template, the
-house-style conventions, the build procedure, the mistakes list, and the two worked
-examples now in `rca/example-*.md`.
-
-This SKILL.md itself carries **derived** content — the condensed pipeline, the routing
-table, and the namespace table. If the SOP pipeline, registry conventions, module set,
-or document structure change, update those sections here in the same pass; a stale
+This SKILL.md carries **derived** content — the condensed pipeline, the routing table,
+and the namespace table. If the SOP pipeline, registry conventions, module set, or
+document structure change, update those sections here in the same pass; a stale
 condensation that contradicts the full SOP is worse than none.
 
-Known upstream errata. **Corrected in these snapshots, still to fix in the workspace
-originals:** the SOP's companion header pointed at the two now-absorbed skills and
-placed the RCA at "Step 9" (it sits under **S10 — REGISTER**, §11.1) — both rewritten
-here to name `triage/TRIAGE.md` and `rca/RCA-WRITEUP.md`; and the GNS-account
-mis-attribution, which named the privatelink-monitor account as the Network Service
-owner — corrected across `triage/TROUBLESHOOTING.md`, `triage/REFERENCE.md` (A.2 table
-and box diagram) and `triage/TRIAGE.md`, since the wrong value there is an escalation
-target. **Still open everywhere:** the
-SOP's companion header says the registry has **58** signatures (it now runs to **#62**
-after the Aug-2026 batch), and triage signatures **S5/S6/S7** are confirmed root causes
-with no registry row (file as #63+).
+**Open corpus hygiene (not blockers for triage):** triage signatures **S5/S6/S7** are
+confirmed root causes with no registry row yet (file as #63+ per the registry maintenance
+rule).

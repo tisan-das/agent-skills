@@ -14,10 +14,9 @@ CloudWatch parser inline) every time.
 CE state; all "rollback" in the workflows means recovering the *investigation*
 from a wrong turn, never mutating the system under study.
 
-## Merged-skill bridge — read before using this module
+## Precedence — read before using this module
 
-This module predates the knowledge corpus in `references/` and was written as a
-standalone skill. Three rules reconcile them:
+Three rules keep this playbook aligned with the corpus in `references/`:
 
 1. **Dedup against the canonical registry, not just S1–S7.** The playbook below
    carries 7 deep-dive signatures; `references/CE-SIGNATURE-REGISTRY.md` carries
@@ -30,7 +29,7 @@ standalone skill. Three rules reconcile them:
    | Triage | Registry | Note |
    |---|---|---|
    | S1 | **#1** | Same strings (`AWS-AssignSlot-Error`, `WAITING_DNS`); CCP-11948 / COPS-25103 |
-   | S2 | **#16a** | The registry row itself cites "ce-log-triage S2"; run #16b's confirm too — near-identical logs, different mechanism |
+   | S2 | **#16a** | Same family as registry #16a; run #16b's confirm too — near-identical logs, different mechanism |
    | S3 | — (mechanism family of #16a) | No dedicated row |
    | S4 | *Secondary noise* entry + the **#60** / GPSC-3907 family | Publisher-side flap ≠ CE down |
    | S5, S6, S7 | **no registry row yet** | Confirmed causes missing from the canonical registry — file them as new rows (#63+) per the registry's own maintenance rule |

@@ -5,9 +5,9 @@
 **637 issue links**, across 31 projects.
 
 **Companion documents**
-- `CE-SIGNATURE-REGISTRY.md` — 58 grep-able failure signatures with proven mechanisms. Used at Step 2.
-- `triage/TRIAGE.md` (+ `scripts/`) — control-plane + on-host log forensics. Used at Step 4 for domains D1/D2. (Formerly the standalone ce-log-triage skill.)
-- `rca/RCA-WRITEUP.md` — turns a finished investigation into the RCA comment or a shareable document. Used at **S10 — REGISTER** (§11.1), not Step 9. (Formerly the standalone rca-writeup skill.)
+- `CE-SIGNATURE-REGISTRY.md` — 60+ grep-able failure signatures with proven mechanisms. Used at Step 2.
+- `triage/TRIAGE.md` (+ `scripts/`) — control-plane + on-host log forensics. Used at Step 4 for domains D1/D2.
+- `rca/RCA-WRITEUP.md` — turns a finished investigation into the RCA comment or a shareable document. Used at **S10 — REGISTER** (§11.1), not Step 9.
 
 ---
 
