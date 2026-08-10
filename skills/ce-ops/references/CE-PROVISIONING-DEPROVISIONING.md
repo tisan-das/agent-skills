@@ -122,7 +122,7 @@ graph TB
     GCS -->|"POST/DELETE /scorch/v2/components"| SCORCH
     GCS -->|"PUT /v1/clusters/.../start,stop"| POOL
     GCS -->|"POST flows"| LMO
-    GCS -->|"OMS register/poll/deregister"| OMS
+    GCS -->|"OMS deregister"| OMS
     GCS -->|"QueryGrid components"| QG
 
     META --> CIDS
@@ -204,8 +204,8 @@ This is the heart of "which APIs the services use to interact." URLs are shown a
 | Pooling | `PUT /v1/clusters/{cluster_id}/start` | Provision a pooled CE | GCS token |
 | Pooling | `PUT /v1/clusters/{cluster_id}/stop` | Deprovision a pooled CE | GCS token |
 | Pooling | `GET /v1/clusters[/{id}]` | List / status | GCS token |
-| OMS (Site GW) | `POST /oms/ce-admin/v1/compute-engines` | Register CE with OMS | GCS token |
-| OMS | `GET /oms/ce-admin/v1/compute-engine-jobs/{jobId}` | Poll registration job | GCS token |
+| OMS (Site GW) | `POST /oms/ce-admin/v1/compute-engines` | **[as-deployed — no longer called from GCS]** Register CE with OMS. The live registrar is the **provision container** (dedicated) or **LMO** (pooled) — see KB §5.6 #4 | GCS token |
+| OMS | `GET /oms/ce-admin/v1/compute-engine-jobs/{jobId}` | **[as-deployed — see row above]** Poll registration job | GCS token |
 | OMS | `DELETE /oms/ce-admin/v1/compute-engines/{engineId}` | Deregister (POOLED delete / failed cleanup) | GCS token |
 | OMS db-admin | `{gw}/oms/db-admin/v1/global-databases…` | Global DB management API (proxied) | CIDS-exchanged OMS token |
 | QueryGrid (Site GW) | `POST /scorch/v2/components` (manifest `qg`), `PATCH/DELETE …` | QG add-on lifecycle (token in header `X-Secret-Console-User-JWT`) | GCS token |

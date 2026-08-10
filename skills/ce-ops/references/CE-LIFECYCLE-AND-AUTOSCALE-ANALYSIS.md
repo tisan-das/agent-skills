@@ -76,7 +76,7 @@ Legend: **Trig** = what causes it. **Ord** = ordering guarantee. **Idem** = idem
 | H9 | **GCS → Metadata** | `PATCH …/{id}` PrivateLink connectivity | PL monitor result | same | none | `metadataService.go:1170-1250` |
 | H10 | **GCS → SCOrch** | `POST/GET/DELETE https://{site}.gateway[.{env}].cloud.<CORP_DOMAIN>/scorch/v2/components[/{id}]` | dedicated CE create/poll/delete | SCOrch SA token | none | `clusterService.go:133-160, 861-875` |
 | H11 | **GCS → Pooling** | `POST /v1/clusters`, `PUT /v1/clusters/{uuid}/start`, `PUT …/stop`, `DELETE …`, `GET …`, `GET …/infrastructure` | pooled CE lifecycle | pooling SA token | none | `clients/pooling_service_client.go:32,329-540` |
-| H12 | **GCS → OMS** | `POST /oms/ce-admin/v1/compute-engines`; `GET …/compute-engine-jobs/{id}`; `DELETE …/compute-engines/{id}` | dedicated CE OMS register/poll/deregister | JWT | none | `omsService.go:17-230` |
+| H12 | **GCS → OMS** | `DELETE …/compute-engines/{id}` — live. `POST /oms/ce-admin/v1/compute-engines` + `GET …/compute-engine-jobs/{id}` — **[as-deployed, no longer on the live path]** | Dedicated OMS **deregister** on teardown. **Registration via GCS is dead code**: the status-monitor call site is commented out (`cmd/status-monitor/main.go:1404-1406`); the live dedicated registrar is **H26**. See KB §5.6 #4 | JWT | none | `omsService.go:17-230` (still in tree) |
 | H13 | **GCS → LMO** | `POST /lmo/v1/flows/{copy-secret-aws, delete-secret-aws, oms-ce-registration, oms-ce-deregistration, ce-postprovisioning, ce-provisioning-health-check}`; `GET /lmo/v1/runs/{id}` | post-provisioning, secrets, OMS | Ping token | polled by `status-monitor` cron | `internal/util/constants.go:49-62`, `orchestrationService.go` |
 | H14 | **Pooling → LMO** | `POST /lmo/v1/flows/oms-ce-registration` / `oms-ce-deregistration`; `GET /lmo/v1/runs/{id}` | pooled OMS lifecycle | Ping | `stamina` on 5xx; poll loop with heartbeat | `pool_manager/clients/lmo.py:15-130` |
 | H15 | **Pooling → Metadata** | `PATCH /compute-engine-configs/{id}` body `{"compute":{"dns_name","connectivity":{…}},"cluster":{"cluster_id"}}` | DNS created / PL set up / connectivity ready / connectivity failure | Ping SA | `httpx_retries` total=3 incl. PATCH | `pool_manager/clients/metadata.py:141-155`, `cluster_events.py` |
@@ -87,7 +87,7 @@ Legend: **Trig** = what causes it. **Ord** = ordering guarantee. **Idem** = idem
 | H20 | **Metadata → Network svc** | `POST/PATCH/DELETE /networks/{site}/compute-engines/{ce}/private-link`, `POST /networks`, `DELETE /networks`, `GET /networks/status/{req}`, `POST /quotas` | org/site onboarding, CE PL | Ping | — | `clients/network_service_client.go:157-700` |
 | H21 | **Metadata → LMO** | `POST` flow trigger + `GET /lmo/v1/runs/{id}`; supplies `X-LMO-Callback-URL` = `{metadata}/v1/site-settings/{siteID}/setup-callback` | site setup / OMS deprovision | Ping | LMO webhook retries | `clients/global_orchestrator_client.go:91-250` |
 | H22 | **LMO → Metadata** | `POST /v1/site-settings/{id}/setup-callback` with `X-LMO-Signature: sha256=…` HMAC | LMO run reaches terminal state | HMAC-SHA256 over raw body, secret from Secrets Manager (5-min cache) | `max_attempts` (default 3) + retryable status codes; `X-LMO-Idempotency-Key` sent | `callbacks/delivery.py:36-84`, `restapi/sites_api.go:437-470`, `restapi/lmo_signature.go` |
-| H23 | **LMO → OMS** | `POST /oms/ce-admin/v1/compute-engines`, `GET …/compute-engine-jobs/{id}`, `DELETE …/compute-engines/{id}` via Site Gateway | pooled OMS registration | Site-gateway token | `WorkflowRetryFixed` | `services/oms_ce_admin/client.go:36-170` |
+| H23 | **LMO → OMS** | `POST /oms/ce-admin/v1/compute-engines`, `GET …/compute-engine-jobs/{id}`, `DELETE …/compute-engines/{id}` via Site Gateway | pooled OMS registration | Site-gateway token | `WorkflowRetryFixed` | `services/oms_ce_admin/client.py:69-118` |
 | H24 | **Metadata → SCIM** | `POST` / `DELETE` / `PUT` `{site}/tdscim/v1/targets` | on config `state` → `RUNNING` (register) or `NOT_PROVISIONED` (deregister), **only via the manager path** | SCIM token per site | — | `clients/scim_client.go:361-560`, `managers/computeengineconfig/update.go:1110-1130` |
 | H25 | **Engine provision container → Network svc** | `PATCH/DELETE {gns}/{SITE_ID}/compute-engines/{name}/targets`; `GET {gns}/status/{req}` | dedicated CE OMS-NLB target register/deregister | JWT | polls status | `src/network/config.sh:49-115` |
 | H26 | **Engine provision container → OMS** | `POST /oms/ce-admin/v1/compute-engines` … polls until `SUCCEEDED` | dedicated CE registration inside the container | generated JWT | poll loop | `src/oms/config.sh:38-130` |
@@ -374,6 +374,13 @@ GCS HandleClusterStatusEvent (POST /clusters/status):
 GCS status-monitor also gates RUNNING on oms_status == "REGISTERED"                                    [clusterService.go:2375-2410]
 ```
 
+> ⚠️ **Verify the second gate before routing on it.** KB §5.6 #2 (GPSC-3735) records that the
+> infra PUT is no longer OMS-gated — the code comment reads *"OMS registration is handled
+> downstream and must not gate this path"*. Whether the `clusterService.go` gate above is a
+> distinct gate that is still live, or stale text alongside the `poolingService.go` one, was
+> **not** re-checked in the last pass. Confirm against the tree before concluding that a CE is
+> held by an OMS gate. `[inferred]`
+
 ### 3.3 RUNNING — steady-state signals
 
 | Signal | Period | Effect |
@@ -637,7 +644,7 @@ permits `STOPPED → RUNNING`). It does **not** recover when:
 |---|---|---|---|
 | 16 | **Pooled CE can wedge permanently below RUNNING.** Pooling sends `oms_status ∈ {REGISTERED, FAILED, TIMEOUT, DEREGISTERED, FAILED_DEREGISTRATION}`; GCS persists it verbatim, but its RUNNING gate only accepts `"REGISTERED"` and its "initialise" branch only fires for `nil`/`"DEREGISTERED"`; the cron OMS switch has no case for `FAILED`/`TIMEOUT` (`default: Debug("OMS in unknown state")`) | `oms_registration.py:104,118,180,211,232`; `poolingService.go:213-219`; `clusterService.go:2375-2410`; `cmd/status-monitor/main.go:1501-1503` | CE stuck in `CONFIGURING` forever; only operator intervention clears it |
 | 17 | **Unmapped pooled states reach metadata** — `FAILED_SETUP`, `FAILED_INFRA_UPDATE`, `UPDATING_INFRASTRUCTURE`, `INITIALIZING`, `TERMINATED` | `util/cluster.go:15-33` vs `enum_state.go:22-33`; `poolingService.go:249-256` returns 500 | Pooling retries the same status in a loop |
-| 18 | **Three OMS `collection_id` conventions** — see Appendix B | `omsService.go:37-42`; `ce_registration.py:113`; `src/oms/config.sh:47-53` | Same CE can be filed under different OMS collections depending on which path registered it; LMO's docstring claims parity with GCS but does not match |
+| 18 | **Three OMS `collection_id` conventions** — see Appendix B | `omsService.go:37-42`; `ce_registration.py:113`; `src/oms/config.sh:47-53` | Same CE can be filed under different OMS collections depending on which path registered it; LMO's docstring claims parity with GCS but does not match. **Scope now smaller:** the GCS path is disabled (KB §5.6 #4), so **two** conventions are live (LMO, provision container) — the GCS convention only explains CEs registered before that change |
 | 19 | **`Idempotency-Key` sent but never read** | `pool_manager/clients/gcs.py:90`; no `Idempotency` handling in GCS | `stamina` retries can double-apply status writes |
 | 20 | **WES auto-suspend deadlocks on the success path** — unbuffered `errChan` is only written on error; `err = <-errChan` blocks forever; `defer close(errChan)` unreachable | `service/task/inactive-ce/inactive_ce.go:123-135` | Every successful auto-suspend leaks a goroutine + DB session |
 | 21 | **Auto-suspend silently self-disables** — after a successful suspend POST, WES deletes the SSM parameter; thereafter `enabled, _, _ := utils.FetchAutoSuspendConfig()` **discards the error** and returns `enabled=false`; the parameter is only recreated on a fresh `→ RUNNING` DynamoDB-stream transition | `inactive_ce.go:615-618, 544`; `scheduler.go:124-127`; `auto_suspend_detector.go:57-62` | If the suspend is refused (CE not in a terminatable state) auto-suspend stays off until the next RUNNING transition |
@@ -694,6 +701,8 @@ permits `STOPPED → RUNNING`). It does **not** recover when:
 15. **Add a post-RUNNING health watcher to the pooling service** — today nothing watches a pooled
     cluster after `sm.finished()`.
 16. **Unify the OMS registration contract** across GCS / LMO / the provision container.
+    *Scope note:* with the GCS path disabled (KB §5.6 #4) this is now a **two-way** reconciliation
+    — LMO and the provision container — plus deleting the dead GCS contract.
 17. Fix the WES `errChan` deadlock and stop discarding the `FetchAutoSuspendConfig` error.
 
 ---

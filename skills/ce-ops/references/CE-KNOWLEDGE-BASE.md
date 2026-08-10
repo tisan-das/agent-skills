@@ -827,8 +827,11 @@ sequenceDiagram
 2. `*cluster.QGStatus == "NOT_PROVISIONED"`
 3. `cluster.Status == "RUNNING"`
 
-**`oms_status` is never read on this path**, for pooled *or* dedicated. Dedicated has no OMS
-step at all. This is the answer to the recurring question *"OMS registration failed — how did
+**`oms_status` is never read on this path**, for pooled *or* dedicated. Dedicated has no
+`oms_status` axis and **no OMS *gate*** on console status — but it does still register with
+OMS, inside the engine provision container (H26; Provisioning §7, phase 7, conditional). "No
+gate" is not "no registration": a dedicated CE can fail phase-7 registration and still show
+**Running**. This is the answer to the recurring question *"OMS registration failed — how did
 QG still get triggered?"*: **nothing links them.**
 
 **What "QueryGrid provisioning" actually is** (`svc-vce-lmo`): LMO creates a **SCOrch component**
@@ -856,6 +859,22 @@ then copies it cross-account into the CE-Secrets/pooled account. The source acco
 `"MCS API returned 400"`, i.e. OMS→MCS rejected the registration (duplicate registration,
 bad `address`/`collection_id`/`engine_id`, or the site not in a valid MCS state). The real
 detail is in the **OMS CE-Admin logs for that job id**, not in LMO.
+
+> **Who actually calls `POST /oms/ce-admin/v1/compute-engines`.** The answer differs by CE
+> type, and on the live path it is **not GCS** in either case — route accordingly:
+>
+> | CE type | Coordinator | Registrar (makes the OMS call) | Evidence |
+> |---|---|---|---|
+> | **Dedicated** | GCS → SCOrch | **`avcd-vce-engine-provision`** — container phase 7, only when `ENABLE_OMS && !SKIP_PRIVATELINK && !PUBLIC` | H26; Provisioning §7 + §9; `src/oms/config.sh` |
+> | **Pooled** | GCS → Pooling Service | **`svc-vce-lmo`** via flow `oms-ce-registration`; Pooling enqueues the task and reports `oms_status` back to GCS | H14, H23; `pool_manager/oms_registration.py`; `lmo/flows/misc/oms/ce_registration.py` |
+>
+> GCS's own registration code (`omsService.go`, `orchestrationService.go`) is still in the tree
+> but its status-monitor call site is commented out — see §5.6 #4. So "the CE never appeared in
+> OMS" is a **container phase-7** question for dedicated and an **LMO flow** question for
+> pooled; it is a GCS question for neither. Note the dedicated conditions: a **public** CE, or
+> one with PrivateLink skipped, is *supposed* to have no OMS registration — absence there is
+> correct behaviour, not a fault. This is separate from provisioning the **site-level** OMS
+> component via LMO's `oms-create` workflows. `[current]`
 
 **Viewpoint** is registered by the Salt role `td_unlimited_viewpoint` **on the VM**, not by the
 provisioning container; the container only resolves credentials, passes them into the
@@ -2003,6 +2022,7 @@ flowchart TB
 | 1 | **OMS `FAILED`/`TIMEOUT` → `FAILED_PROVISIONING`** | `6c920bf3` GPSC-3811 | The CE now *fails* instead of hanging. The status-monitor's failed-state handler deprovisions it and fires `TriggerOMSCEDeregistration` (best-effort; a failure is recorded as `FAILED_DEREGISTRATION`). |
 | 2 | **Infra PUT no longer OMS-gated** | `e0a0cb80` GPSC-3735 | Comment now reads *"OMS registration is handled downstream and must not gate this path"*. Pooling reporting RUNNING is the sole readiness signal. A `409` from metadata means infra is already present → treated as success. |
 | 3 | **Stale `component_id` → 409** + **`FAILED_PROVISIONING` preserved on STOPPED** | `dbfa7e8c` GPSC-3811 | Kills two classes of out-of-order/masking bug. |
+| 4 | **GCS no longer registers dedicated CEs with OMS** | *(SHA not yet stamped — see §0)* | The status-monitor call site is commented out (`cmd/status-monitor/main.go:1404-1406`); `omsService.go` / `orchestrationService.go` remain in the tree as dead code. Dedicated registration now happens in the **engine provision container** (H26), pooled through **LMO** (H23). Two consequences: H12's register/poll half is historical, and lifecycle defect 18's "three `collection_id` conventions" is now **two live** paths. `[current]` — from a source pass against `cog-global-compute`; record the SHA in §0 |
 
 **Also new:** `oms_status` can now be **`TIMEOUT`** (pooling's own 10-minute OMS wait) and
 **`FAILED_REGISTRATION`**, in addition to the values listed in §5.1.
