@@ -364,6 +364,13 @@ sequenceDiagram
     Note over GCS,ENGINE: GCS status-monitor (CloudWatch cron ~3–5 min) reconciles → RUNNING (gated on OMS)
 ```
 
+> ⚠️ **"gated on OMS" above is pre-GPSC-3735 — do not route on it.** KB §5.6 #2 records that the
+> infra PUT is no longer OMS-gated (`e0a0cb80`: *"OMS registration is handled downstream and must
+> not gate this path"*), and KB §5 states the **dedicated** path never had an OMS gate at all
+> (KB §8.3 triage tree, §5 state model). Treat the note as `[as-deployed]` history: a dedicated CE
+> sitting at Starting is **not** explained by an OMS gate. Confirm against the tree before
+> concluding otherwise.
+
 **Key control-plane mechanics** (`cog-global-compute`):
 - **Routing** (`internal/api/router_helper.go`): GCS fetches the config to detect POOLED vs SCOrch — one extra Metadata round-trip per request.
 - **Guards** (`ClusterServicer.FetchConfigFromMetadata`): connectivity must be PrivateLink-complete; config `state` must not already be in-use (409). `FAILED_PROVISIONING` is **not** blocked → a conditional `UpdateItem` CAS (`FAILED_PROVISIONING → PROVISIONING`) enables a single retry; the loser gets 409.
@@ -412,6 +419,11 @@ sequenceDiagram
 
     Note over GCS: status-monitor polls GET /v1/clusters/{id} → normalizes status → RUNNING (gated on OMS)
 ```
+
+> ⚠️ **"gated on OMS" above is pre-GPSC-3735.** The pooled OMS gate was real — `poolingService.go`
+> fired the infra PUT only when `oms_status == REGISTERED` — but GPSC-3735 removed it and GPSC-3811
+> made an OMS `FAILED`/`TIMEOUT` fail the CE instead of hanging it. See KB §5.6 #1–#2 for both
+> versions before using this diagram to explain a stuck pooled CE. `[as-deployed]`
 
 **Pooling internals** (`cog-compute-engine-pooling-service/pool_manager/`):
 - **Pools** = LaunchTemplate (350 GB encrypted EBS, instance profile, SG, cloud-config UserData) + Auto Scaling Group (MixedInstancesPolicy). Declarative reconcile via `PUT /v1/pools`; scale via `PUT /v1/pools/{id}/scale`.
@@ -567,7 +579,7 @@ sequenceDiagram
     end
 ```
 
-Notable: reaching `RUNNING` is **gated on OMS registration completing**, and on a successful `PUT …/infrastructure` (node IPs). A failure to write infrastructure flips the cluster to `FAILED_PROVISIONING`. `TERMINATED` clusters are deleted from DynamoDB and the Metadata state is set to `NOT_PROVISIONED`.
+Notable: reaching `RUNNING` was **gated on OMS registration completing** — `[as-deployed]`, and **only ever for pooled**; GPSC-3735 removed that gate (KB §5.6 #2) and the dedicated path never had one. What remains current is that `RUNNING` still depends on a successful `PUT …/infrastructure` (node IPs). A failure to write infrastructure flips the cluster to `FAILED_PROVISIONING`. `TERMINATED` clusters are deleted from DynamoDB and the Metadata state is set to `NOT_PROVISIONED`.
 
 ---
 

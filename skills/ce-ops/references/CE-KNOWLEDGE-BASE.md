@@ -829,7 +829,7 @@ sequenceDiagram
 
 **`oms_status` is never read on this path**, for pooled *or* dedicated. Dedicated has no
 `oms_status` axis and **no OMS *gate*** on console status — but it does still register with
-OMS, inside the engine provision container (H26; Provisioning §7, phase 7, conditional). "No
+OMS, inside the engine provision container (H26; Provisioning §7 + §9, phase 7, conditional). "No
 gate" is not "no registration": a dedicated CE can fail phase-7 registration and still show
 **Running**. This is the answer to the recurring question *"OMS registration failed — how did
 QG still get triggered?"*: **nothing links them.**
@@ -2022,7 +2022,7 @@ flowchart TB
 | 1 | **OMS `FAILED`/`TIMEOUT` → `FAILED_PROVISIONING`** | `6c920bf3` GPSC-3811 | The CE now *fails* instead of hanging. The status-monitor's failed-state handler deprovisions it and fires `TriggerOMSCEDeregistration` (best-effort; a failure is recorded as `FAILED_DEREGISTRATION`). |
 | 2 | **Infra PUT no longer OMS-gated** | `e0a0cb80` GPSC-3735 | Comment now reads *"OMS registration is handled downstream and must not gate this path"*. Pooling reporting RUNNING is the sole readiness signal. A `409` from metadata means infra is already present → treated as success. |
 | 3 | **Stale `component_id` → 409** + **`FAILED_PROVISIONING` preserved on STOPPED** | `dbfa7e8c` GPSC-3811 | Kills two classes of out-of-order/masking bug. |
-| 4 | **GCS no longer registers dedicated CEs with OMS** | *(SHA not yet stamped — see §0)* | The status-monitor call site is commented out (`cmd/status-monitor/main.go:1404-1406`); `omsService.go` / `orchestrationService.go` remain in the tree as dead code. Dedicated registration now happens in the **engine provision container** (H26), pooled through **LMO** (H23). Two consequences: H12's register/poll half is historical, and lifecycle defect 18's "three `collection_id` conventions" is now **two live** paths. `[current]` — from a source pass against `cog-global-compute`; record the SHA in §0 |
+| 4 | **GCS no longer registers dedicated CEs with OMS** | *(SHA not yet stamped — see §0)* | The status-monitor call site is commented out (`cmd/status-monitor/main.go:1404-1406`); `omsService.go` / `orchestrationService.go` remain in the tree, but their **registration** paths are no longer reached. **Deregistration is unaffected** — GCS still issues `DELETE …/compute-engines/{id}` on teardown, so H12 keeps its `DELETE` half and this row must not be read as retiring the whole file. Dedicated registration now happens in the **engine provision container** (H26), pooled through **LMO** (H23). Two consequences: H12's register/poll half is historical, and lifecycle defect 18's "three `collection_id` conventions" is now **two live** paths. `[current]` — from a source pass against `cog-global-compute`; record the SHA in §0 |
 
 **Also new:** `oms_status` can now be **`TIMEOUT`** (pooling's own 10-minute OMS wait) and
 **`FAILED_REGISTRATION`**, in addition to the values listed in §5.1.
