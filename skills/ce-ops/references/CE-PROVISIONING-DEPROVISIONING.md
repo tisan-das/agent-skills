@@ -422,8 +422,10 @@ sequenceDiagram
 
 > ⚠️ **"gated on OMS" above is pre-GPSC-3735.** The pooled OMS gate was real — `poolingService.go`
 > fired the infra PUT only when `oms_status == REGISTERED` — but GPSC-3735 removed it and GPSC-3811
-> made an OMS `FAILED`/`TIMEOUT` fail the CE instead of hanging it. See KB §5.6 #1–#2 for both
-> versions before using this diagram to explain a stuck pooled CE. `[as-deployed]`
+> escalates `FAILED`/`TIMEOUT` to `FAILED_PROVISIONING`. **That is not the whole story:** open
+> lifecycle defect 16 cites a *second* gate (`clusterService.go:2375-2410`) that can still wedge a
+> pooled CE at `CONFIGURING`. Read KB §5.6 #1–#2 **and** §8.3's caveat before using this diagram to
+> explain a stuck pooled CE. `[as-deployed]`
 
 **Pooling internals** (`cog-compute-engine-pooling-service/pool_manager/`):
 - **Pools** = LaunchTemplate (350 GB encrypted EBS, instance profile, SG, cloud-config UserData) + Auto Scaling Group (MixedInstancesPolicy). Declarative reconcile via `PUT /v1/pools`; scale via `PUT /v1/pools/{id}/scale`.

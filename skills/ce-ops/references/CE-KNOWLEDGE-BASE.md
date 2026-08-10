@@ -2490,7 +2490,7 @@ GET    /health
 | `Cluster status unchanged, no update needed` | the cron no-op (2,812× in GPSC-3907) |
 | `Cluster is RUNNING and QueryGrid is NOT_PROVISIONED, triggering QueryGrid provisioning` | the QG trigger |
 | `Triggering infrastructure PUT: status=RUNNING and oms_status=REGISTERED` | the console flips to Running |
-| `Upstream reports RUNNING but OMS not registered — gating RUNNING transition` | pooled OMS gate blocking |
+| `Upstream reports RUNNING but OMS not registered — gating RUNNING transition` | pooled OMS gate blocking. **Which gate matters:** the infra-PUT gate was removed by GPSC-3735 (§5.6 #2), so a *current* occurrence points at the `clusterService.go:2375-2410` path of open lifecycle defect 16, not at the old `poolingService.go` one — see §8.3's caveat |
 | `dynamoDB update successful but metadata service update failed` | the drift moment |
 | `ServiceNow check failed` | pooled availability / site lookup failure |
 | `Failed to grant IDP access for compute engine` | Valtix egress 403 |
@@ -2530,6 +2530,20 @@ flowchart TD
     QGB -->|Fail| QGBF[QG FAILED and console STILL Starting]
     QGB -->|Stuck| QGBS[QG PROVISIONING - limbo]
 ```
+
+> ⚠️ **The `PSTUCK` branch is contested — do not assume either behaviour.** Two parts of this
+> corpus disagree about whether a pooled CE with unregistered OMS still hangs. §5.6 #1–#2 and the
+> §9 defect register record it as **fixed**: GPSC-3811 (`6c920bf3`) escalates `FAILED`/`TIMEOUT`
+> to `FAILED_PROVISIONING`, and GPSC-3735 (`e0a0cb80`) removed the infra-PUT gate at
+> `poolingService.go:268-285`. But **lifecycle defect 16 is still open** and cites a *different*
+> gate — `clusterService.go:2375-2410` accepts only `"REGISTERED"`, and the cron OMS switch has
+> no `FAILED`/`TIMEOUT` case (`default: Debug("OMS in unknown state")`) — wedging the CE at
+> `CONFIGURING` until an operator clears it. These are not obviously the same gate, so treat
+> `PSTUCK` and its three `QGB*` children as **still reachable** until proven otherwise.
+> **Disambiguate from evidence, not from this tree:** a CE that moved to `FAILED_PROVISIONING`
+> took the fixed path; one sitting at `CONFIGURING`/Starting with `oms_status` = `FAILED` or
+> `TIMEOUT` is **lifecycle defect 16** (Part 6 — not registry #16, which is the Event 13912 PDE
+> reconcile). `[inferred]`
 
 **Order of investigation that consistently worked:**
 

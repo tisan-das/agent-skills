@@ -374,12 +374,14 @@ GCS HandleClusterStatusEvent (POST /clusters/status):
 GCS status-monitor also gates RUNNING on oms_status == "REGISTERED"                                    [clusterService.go:2375-2410]
 ```
 
-> ⚠️ **Verify the second gate before routing on it.** KB §5.6 #2 (GPSC-3735) records that the
-> infra PUT is no longer OMS-gated — the code comment reads *"OMS registration is handled
-> downstream and must not gate this path"*. Whether the `clusterService.go` gate above is a
-> distinct gate that is still live, or stale text alongside the `poolingService.go` one, was
-> **not** re-checked in the last pass. Confirm against the tree before concluding that a CE is
-> held by an OMS gate. `[inferred]`
+> ⚠️ **Two different gates — do not collapse them.** KB §5.6 #2 (GPSC-3735) removed the
+> **infra-PUT** gate at `poolingService.go:268-285`; its code comment reads *"OMS registration is
+> handled downstream and must not gate this path"*. The `clusterService.go:2375-2410` gate above
+> is a **different** one, and there is evidence it is still live: **open lifecycle defect 16**
+> (Part 6) cites these exact lines — the gate accepts only `"REGISTERED"` and the cron OMS switch
+> has no `FAILED`/`TIMEOUT` case — as the mechanism that wedges a pooled CE at `CONFIGURING`.
+> So "GPSC-3735 removed the OMS gate" does **not** mean no OMS gate remains. Confirm against the
+> tree before routing, and see KB §8.3's caveat. `[inferred]`
 
 ### 3.3 RUNNING — steady-state signals
 
@@ -688,7 +690,7 @@ permits `STOPPED → RUNNING`). It does **not** recover when:
 11. **Complete `MapPoolingStatus`** for `INITIALIZING`, `UPDATING_INFRASTRUCTURE`, `TERMINATING`,
     `TERMINATED`, `FAILED_SETUP`, `FAILED_INFRA_UPDATE`; and **normalise `oms_status`** at the
     `POST /clusters/status` boundary (`FAILED → FAILED_REGISTRATION`, `TIMEOUT →
-    FAILED_REGISTRATION`) so pooled CEs cannot wedge (defect 16).
+    FAILED_REGISTRATION`) so pooled CEs cannot wedge (lifecycle defect 16).
 12. **Honour the `Idempotency-Key`** that pooling already sends.
 
 ### Medium term — design
