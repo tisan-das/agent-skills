@@ -1,6 +1,6 @@
 # TROUBLESHOOTING — Failure-signature playbook (S1–S7) and noise catalog
 
-> **Merged-skill note.** Always grep `references/CE-SIGNATURE-REGISTRY.md` (60+
+> **Precedence.** Always grep `references/CE-SIGNATURE-REGISTRY.md` (60+
 > canonical rows) in the same pass as this index — the S↔# cross-map is in
 > `triage/TRIAGE.md`. Where this file's facts conflict with the corpus, the
 > corpus wins.

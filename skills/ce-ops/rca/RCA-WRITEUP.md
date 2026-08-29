@@ -1,11 +1,9 @@
 # RCA Writeup — turn a concluded investigation into durable artifacts
 
-> **Provenance.** Merged from two sources: the Jira/SOP artifacts (steps S8–S10,
-> §9–§11 of `references/CE-DEBUG-SOP.md`, the registry's maintenance and
-> verdict-hazard rules, and the triage W6 handoff contract), and the standalone
-> rca-writeup skill this module absorbed — which contributed the shareable
-> document template, the house-style conventions, the build procedure, the
-> mistakes list, and the two worked examples in this directory.
+Implements SOP steps **S8–S10** (§9–§11 of `references/CE-DEBUG-SOP.md`), the
+registry maintenance / verdict-hazard rules, and the triage W6 handoff: Jira RCA
+comment, shareable-document template, house style, verification contract, closure
+rules, registry row, and worked examples in `rca/example-*.md`.
 
 An investigation that ends in a meeting is paid for twice — 58% of closed CE issues
 never recorded what was wrong. This module exists to reverse that: every concluded

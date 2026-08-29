@@ -82,8 +82,8 @@ graph TB
     end
 
     subgraph CP["Control Plane"]
-        GCS["Global Compute Service (GCS)<br/>cog-global-compute<br/>api • authorizer • status-monitor<br/>privatelink-monitor • whitelist-ip • scheduler"]
-        META["Metadata Service<br/>accp-metadata-service<br/>configs • orgs • sites • infra • CE-Site-ID"]
+        GCS["Global Compute Service (GCS)<br/>cog-global-compute<br/>api - authorizer - status-monitor<br/>privatelink-monitor - whitelist-ip - scheduler"]
+        META["Metadata Service<br/>accp-metadata-service<br/>configs - orgs - sites - infra - CE-Site-ID"]
         LMO["LMO<br/>svc-vce-lmo<br/>Litestar API + Celery workers"]
         POOL["Pooling Service<br/>cog-compute-engine-pooling-service<br/>Litestar + PostgreSQL + pgmq"]
         NET["Network Service<br/>accp-network-service<br/>VPC / PrivateLink / OMS NLB"]
@@ -122,7 +122,7 @@ graph TB
     GCS -->|"POST/DELETE /scorch/v2/components"| SCORCH
     GCS -->|"PUT /v1/clusters/.../start,stop"| POOL
     GCS -->|"POST flows"| LMO
-    GCS -->|"OMS register/poll/deregister"| OMS
+    GCS -->|"OMS deregister"| OMS
     GCS -->|"QueryGrid components"| QG
 
     META --> CIDS
@@ -204,8 +204,8 @@ This is the heart of "which APIs the services use to interact." URLs are shown a
 | Pooling | `PUT /v1/clusters/{cluster_id}/start` | Provision a pooled CE | GCS token |
 | Pooling | `PUT /v1/clusters/{cluster_id}/stop` | Deprovision a pooled CE | GCS token |
 | Pooling | `GET /v1/clusters[/{id}]` | List / status | GCS token |
-| OMS (Site GW) | `POST /oms/ce-admin/v1/compute-engines` | Register CE with OMS | GCS token |
-| OMS | `GET /oms/ce-admin/v1/compute-engine-jobs/{jobId}` | Poll registration job | GCS token |
+| OMS (Site GW) | `POST /oms/ce-admin/v1/compute-engines` | **[as-deployed — no longer called from GCS]** Register CE with OMS. The live registrar is the **provision container** (dedicated) or **LMO** (pooled) — see KB §5.6 #4 | GCS token |
+| OMS | `GET /oms/ce-admin/v1/compute-engine-jobs/{jobId}` | **[as-deployed — see row above]** Poll registration job | GCS token |
 | OMS | `DELETE /oms/ce-admin/v1/compute-engines/{engineId}` | Deregister (POOLED delete / failed cleanup) | GCS token |
 | OMS db-admin | `{gw}/oms/db-admin/v1/global-databases…` | Global DB management API (proxied) | CIDS-exchanged OMS token |
 | QueryGrid (Site GW) | `POST /scorch/v2/components` (manifest `qg`), `PATCH/DELETE …` | QG add-on lifecycle (token in header `X-Secret-Console-User-JWT`) | GCS token |
@@ -304,7 +304,7 @@ sequenceDiagram
     NET->>NET: Write network-svc-sites row; status COMPLETED
     NET->>META: POST /sites/networks (callback) {request_id, status, data}
     META->>META: Update vce-sites.standard_network_details
-    Note over META,ADMIN: org-sync-processor periodically reconciles ServiceNow sites → vce-sites
+    Note over META,ADMIN: org-sync-processor periodically reconciles ServiceNow sites -> vce-sites
 ```
 
 **Network resources created per site (AWS)** — verified in `accp-network-service/src/internal/providers/aws/vpc/aws_vpc_deploy.go`:
@@ -341,12 +341,12 @@ sequenceDiagram
     AUTH->>AUTH: Validate JWT vs JWKS; path-based authz; return IAM policy
     AUTH->>GCS: Proxy with auth context (correlation/request IDs)
     GCS->>META: GET /v1/compute-engine-configs/{id}  (route decision)
-    Note over GCS: compute.type != POOLED → ClusterServicer (SCOrch)
-    GCS->>META: GET …/{id}/provisioning-config  (SA token)
-    GCS->>GCS: Guards — connectivity.status must be PRIVATE_LINK_COMPLETED/SUCCESS;<br/>CheckConfigStateAvailable (409 if in-use; FAILED_PROVISIONING is allowed → retry)
-    GCS->>CIDS: resolve create → compute_engine:start_stop
+    Note over GCS: compute.type != POOLED -> ClusterServicer (SCOrch)
+    GCS->>META: GET .../{id}/provisioning-config  (SA token)
+    GCS->>GCS: Guards - connectivity.status must be PRIVATE_LINK_COMPLETED/SUCCESS;<br/>CheckConfigStateAvailable (409 if in-use; FAILED_PROVISIONING is allowed -> retry)
+    GCS->>CIDS: resolve create -> compute_engine:start_stop
     GCS->>SCORCH: GET /scorch/v2/manifests  (latest ACTIVE, or by database_version if non-prod)
-    GCS->>SCORCH: POST /scorch/v2/components<br/>{name=lower(config_id), manifest_name:"ce", manifest_version,<br/> platform, desired_status:"RUNNING", configuration:{…}}
+    GCS->>SCORCH: POST /scorch/v2/components<br/>{name=lower(config_id), manifest_name:"ce", manifest_version,<br/> platform, desired_status:"RUNNING", configuration:{...}}
     SCORCH-->>GCS: {component_id}
     GCS->>DDB: upsert {site_id, config_id, status=PROVISIONING, component_id, provisioner=SCORCH}
     GCS->>META: PATCH state=PROVISIONING (+ cluster info)
@@ -361,8 +361,15 @@ sequenceDiagram
     PROV->>PROV: Phase 6/7 register network targets + OMS (conditional)
     PROV-->>SCORCH: status/output files
 
-    Note over GCS,ENGINE: GCS status-monitor (CloudWatch cron ~3–5 min) reconciles → RUNNING (gated on OMS)
+    Note over GCS,ENGINE: GCS status-monitor (CloudWatch cron ~3-5 min) reconciles -> RUNNING (gated on OMS)
 ```
+
+> ⚠️ **"gated on OMS" above is pre-GPSC-3735 — do not route on it.** KB §5.6 #2 records that the
+> infra PUT is no longer OMS-gated (`e0a0cb80`: *"OMS registration is handled downstream and must
+> not gate this path"*), and KB §5 states the **dedicated** path never had an OMS gate at all
+> (KB §8.3 triage tree, §5 state model). Treat the note as `[as-deployed]` history: a dedicated CE
+> sitting at Starting is **not** explained by an OMS gate. Confirm against the tree before
+> concluding otherwise.
 
 **Key control-plane mechanics** (`cog-global-compute`):
 - **Routing** (`internal/api/router_helper.go`): GCS fetches the config to detect POOLED vs SCOrch — one extra Metadata round-trip per request.
@@ -395,23 +402,30 @@ sequenceDiagram
     Note over META,POOL: At POOLED config creation a cluster record (UUID) is created via POST /v1/clusters
     GCS->>META: GET /v1/compute-engine-configs/{id}  (type=POOLED)
     GCS->>POOL: PUT /v1/clusters/{cluster_id}/start  (Bearer)
-    POOL->>PG: state → PROVISIONING
+    POOL->>PG: state -> PROVISIONING
     POOL->>Q: enqueue TaskClusterStart
     POOL-->>GCS: 202 Accepted
     GCS->>GCS: DynamoDB upsert (POOLED) + PATCH Metadata state
 
     CON->>Q: read_with_poll(vt=40, qty=1)
     CON->>ASG: ensure capacity (zone-aware multiplier); find InService+Healthy instances
-    CON->>ASG: detach chosen instances (ShouldDecrementDesiredCapacity=false → pool refills)
+    CON->>ASG: detach chosen instances (ShouldDecrementDesiredCapacity=false -> pool refills)
     CON->>NODE: POST :8080/poolclusterconfig (leader) / :8080/execute (followers)
     CON->>NODE: poll :22222/provisioning-status until configured
-    CON->>PG: state → RUNNING; record instances/resources
+    CON->>PG: state -> RUNNING; record instances/resources
     POOL->>META: PATCH /compute-engine-configs/{id} (connectivity, DNS name)
     POOL->>DNS: POST /dns/records (A record)
     POOL->>GCS: POST /privatelink (if private-link connectivity)
 
-    Note over GCS: status-monitor polls GET /v1/clusters/{id} → normalizes status → RUNNING (gated on OMS)
+    Note over GCS: status-monitor polls GET /v1/clusters/{id} -> normalizes status -> RUNNING (gated on OMS)
 ```
+
+> ⚠️ **"gated on OMS" above is pre-GPSC-3735.** The pooled OMS gate was real — `poolingService.go`
+> fired the infra PUT only when `oms_status == REGISTERED` — but GPSC-3735 removed it and GPSC-3811
+> escalates `FAILED`/`TIMEOUT` to `FAILED_PROVISIONING`. **That is not the whole story:** open
+> lifecycle defect 16 cites a *second* gate (`clusterService.go:2375-2410`) that can still wedge a
+> pooled CE at `CONFIGURING`. Read KB §5.6 #1–#2 **and** §8.3's caveat before using this diagram to
+> explain a stuck pooled CE. `[as-deployed]`
 
 **Pooling internals** (`cog-compute-engine-pooling-service/pool_manager/`):
 - **Pools** = LaunchTemplate (350 GB encrypted EBS, instance profile, SG, cloud-config UserData) + Auto Scaling Group (MixedInstancesPolicy). Declarative reconcile via `PUT /v1/pools`; scale via `PUT /v1/pools/{id}/scale`.
@@ -483,29 +497,30 @@ sequenceDiagram
     participant SEC as AWS Secrets Manager<br/>(cross-account)
     participant META as Metadata Service
 
-    Note over SM,META: Enablement — at cluster create, if applications.query_grid.enable=true,<br/>GCS sets qg_status = NOT_PROVISIONED (preserved on re-create)
+    Note over SM,META: Enablement - at cluster create, if applications.query_grid.enable=true
+    Note over SM,META: GCS sets qg_status = NOT_PROVISIONED (preserved on re-create)
 
-    Note over SM,META: PHASE 1 — Trigger (status-monitor cron, ~3–5 min)
+    Note over SM,META: PHASE 1 - Trigger (status-monitor cron, ~3-5 min)
     SM->>DDB: Scan non-terminal clusters
     DDB-->>SM: cluster {status:RUNNING, qg_status:NOT_PROVISIONED}
 
-    Note over SM,META: PHASE 2 — Provision the QueryGrid SCOrch component (provisionQueryGridForCluster)
+    Note over SM,META: PHASE 2 - Provision the QueryGrid SCOrch component (provisionQueryGridForCluster)
     SM->>SCORCH: GET /scorch/v2/manifests  (latest ACTIVE "qg" manifest)
     SCORCH-->>SM: {manifest_version}
-    SM->>SCORCH: POST /scorch/v2/components<br/>{manifest_name:"qg", manifest_version, configuration:{…}}<br/>Header: X-Secret-Console-User-JWT
+    SM->>SCORCH: POST /scorch/v2/components<br/>{manifest_name:"qg", manifest_version, configuration:{...}}<br/>Header: X-Secret-Console-User-JWT
     SCORCH-->>SM: {qg_component_id}
     SM->>DDB: UpdateQueryGridStatusInDynamoDB<br/>qg_status=PROVISIONING, qg_component_id
     SM->>META: UpdateQueryGridConfigState (PROVISIONING)
 
-    Note over SM,SEC: PHASE 3 — Cross-account secret copy for QG connectivity (CopySecretForQueryGrid → LMO)
-    SM->>LMO: POST /lmo/v1/flows/copy-secret-aws  → 202 {run_id}
-    LMO->>SEC: AssumeRole(source) → GetSecretValue<br/>→ AssumeRole(target) → Create/PutSecretValue
+    Note over SM,SEC: PHASE 3 - Cross-account secret copy for QG connectivity (CopySecretForQueryGrid -> LMO)
+    SM->>LMO: POST /lmo/v1/flows/copy-secret-aws  -> 202 {run_id}
+    LMO->>SEC: AssumeRole(source) -> GetSecretValue<br/>-> AssumeRole(target) -> Create/PutSecretValue
     loop poll every 10s (timeout 5 min)
         SM->>LMO: GET /lmo/v1/runs/{run_id}
         LMO-->>SM: {status: RUNNING / COMPLETED / FAILED}
     end
 
-    Note over SM,META: PHASE 4 — Status convergence (subsequent cron cycles, updateQueryGridStatusFromCron)
+    Note over SM,META: PHASE 4 - Status convergence (subsequent cron cycles, updateQueryGridStatusFromCron)
     loop until terminal
         SM->>SCORCH: GET /scorch/v2/components/{qg_component_id}
         SCORCH-->>SM: {status, QG_OPERATION:register}
@@ -545,7 +560,7 @@ sequenceDiagram
 
     CW->>SM: scheduled trigger
     SM->>DDB: Scan non-terminal (PROVISIONING, CONFIGURING, TERMINATING,<br/>FAILED_*, RUNNING)
-    loop per cluster (semaphore = MONITOR_CONCURRENCY, ≤500)
+    loop per cluster (semaphore = MONITOR_CONCURRENCY, <=500)
         alt SCORCH cluster
             SM->>SCORCH: GET /scorch/v2/components/{id}
         else POOLED cluster
@@ -553,21 +568,21 @@ sequenceDiagram
         end
         SM->>SM: normalize status (MapPoolingStatus for pooled)
         opt upstream RUNNING
-            SM->>OMS: RegisterCEWithOMS / poll job → REGISTERED
-            Note over SM: CE → RUNNING only AFTER OMS COMPLETED;<br/>also PUTs infrastructure (node IPs)
+            SM->>OMS: RegisterCEWithOMS / poll job -> REGISTERED
+            Note over SM: CE -> RUNNING only AFTER OMS COMPLETED, also PUTs infrastructure (node IPs)
         end
         opt FAILED_* cluster
-            SM->>SCORCH: DELETE component  (or POOL stop)  — idempotent cleanup
+            SM->>SCORCH: DELETE component  (or POOL stop)  - idempotent cleanup
         end
         opt QueryGrid status drift
             SM->>SCORCH: poll qg component; converge register/deregister
         end
         SM->>DDB: UpdateItem status
-        SM->>META: PATCH config state (TERMINATED → NOT_PROVISIONED)
+        SM->>META: PATCH config state (TERMINATED -> NOT_PROVISIONED)
     end
 ```
 
-Notable: reaching `RUNNING` is **gated on OMS registration completing**, and on a successful `PUT …/infrastructure` (node IPs). A failure to write infrastructure flips the cluster to `FAILED_PROVISIONING`. `TERMINATED` clusters are deleted from DynamoDB and the Metadata state is set to `NOT_PROVISIONED`.
+Notable: reaching `RUNNING` was **gated on OMS registration completing** — `[as-deployed]`, and **only ever for pooled**; GPSC-3735 removed that gate (KB §5.6 #2) and the dedicated path never had one. What remains current is that `RUNNING` still depends on a successful `PUT …/infrastructure` (node IPs). A failure to write infrastructure flips the cluster to `FAILED_PROVISIONING`. `TERMINATED` clusters are deleted from DynamoDB and the Metadata state is set to `NOT_PROVISIONED`.
 
 ---
 
@@ -595,15 +610,15 @@ sequenceDiagram
     loop every PollInterval minutes
         WES->>DB: SELECT COUNT(*) FROM DBC.SESSIONINFO WHERE USERNAME NOT IN (system_users)
         alt active sessions > 0
-            WES->>WES: active — skip
+            WES->>WES: active - skip
         else no sessions
-            WES->>DB: FLUSH QUERY LOGGING WITH ALLDBQL; MERGE MAX(collecttimestamp) → inactivemon.qrylog_ts
+            WES->>DB: FLUSH QUERY LOGGING WITH ALLDBQL; MERGE MAX(collecttimestamp) -> inactivemon.qrylog_ts
             WES->>DB: COUNT(*) FROM inactivemon.qrylog_ts WHERE maxtimestamp > (now - N min)
             alt recent activity OR engine is new (init_time guard)
-                WES->>WES: active — skip
+                WES->>WES: active - skip
             else idle
                 WES->>SSM: read /compute-engine-configs-{engine} (auto_suspend enabled?)
-                WES->>GCS: HTTPS POST {event_type:"suspend", cluster_id, site_id, …} (OAuth2)
+                WES->>GCS: HTTPS POST {event_type:"suspend", cluster_id, site_id, ...} (OAuth2)
             end
         end
     end
@@ -611,9 +626,9 @@ sequenceDiagram
     Note over GCS,META: cloud side
     GCS->>SQS: (auto_suspend / suspend events)
     SQS->>SCHED: ReceiveMessage (WORKER_MODE=SQS_PROCESSOR)
-    SCHED->>GCS: GET /clusters/{config_id}; if terminatable → DELETE /clusters/{config_id}?event_source=auto_suspend_event
+    SCHED->>GCS: GET /clusters/{config_id}; if terminatable -> DELETE /clusters/{config_id}?event_source=auto_suspend_event
     GCS->>SCORCH: DELETE /scorch/v2/components/{id} (or POOL stop)
-    GCS->>DDB: status → TERMINATING
+    GCS->>DDB: status -> TERMINATING
     GCS->>META: PATCH state
 ```
 
@@ -640,10 +655,10 @@ sequenceDiagram
 
     USER->>GCS: DELETE /clusters/{config_id}
     GCS->>DDB: resolve site_id + component_id (GetItem or scan fallback)
-    GCS->>GCS: RBAC delete → compute_engine:start_stop
+    GCS->>GCS: RBAC delete -> compute_engine:start_stop
     alt SCORCH
         GCS->>SCORCH: DELETE /scorch/v2/components/{componentID}
-        Note over SCORCH: launches provision container COMPONENT_JOB_TYPE=DELETE → delete CFN stack
+        Note over SCORCH: launches provision container COMPONENT_JOB_TYPE=DELETE -> delete CFN stack
     else POOLED
         GCS->>POOL: PUT /v1/clusters/{cluster_id}/stop
         GCS->>OMS: DELETE /oms/ce-admin/v1/compute-engines/{id}  (deregister)
@@ -651,9 +666,9 @@ sequenceDiagram
     GCS->>DDB: UpdateItem status (TERMINATING / mapped)
     GCS->>META: PATCH state
     opt QueryGrid enabled
-        GCS->>SCORCH: QG deregister; status → TERMINATING
+        GCS->>SCORCH: QG deregister; status -> TERMINATING
     end
-    Note over GCS,META: status-monitor later sees TERMINATED → delete DDB row, set state NOT_PROVISIONED
+    Note over GCS,META: status-monitor later sees TERMINATED -> delete DDB row, set state NOT_PROVISIONED
 ```
 
 - **SCORCH delete** removes the SCOrch component (which triggers the provision container's DELETE phases) and deregisters QueryGrid; it does **not** itself call OMS deregister (status-monitor handles failed-cluster cleanup).
@@ -688,7 +703,7 @@ graph LR
     end
     subgraph S3["3. Packer (avcd-vce-engine-packer)"]
         PKR["engine.{intel,arm}.pkr.hcl"]
-        PKR --> STEPS["pre-RPMs → cloud meta → disks →<br/>salt-call state.db.initialize (300m) →<br/>docker/OTF/UDF → security agents → cleanup"]
+        PKR --> STEPS["pre-RPMs -> cloud meta -> disks -><br/>salt-call state.db.initialize (300m) -><br/>docker/OTF/UDF -> security agents -> cleanup"]
         STEPS --> IMG[("AMI / Azure / GCP / vSphere image")]
     end
     subgraph S4["4. Provision (avcd-vce-engine-provision)"]

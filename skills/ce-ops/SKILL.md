@@ -1,19 +1,18 @@
 ---
 name: ce-ops
-description: Teradata VantageCloud Lake Compute Engine (CE) ops - knowledge base, log triage, and RCA writeup. Use when a CE or site is stuck, failed, degraded, or won't start (FAILED_PROVISIONING, NOT_PROVISIONED, down/hardstop, stuck Starting/Stopping, expand vconfig), when analyzing CloudWatch Logs Insights exports, messages syslog or Salt minion logs, when you need the root cause of a CE incident or Jira, and when writing it up as an RCA, postmortem, incident report, or ticket summary. Also use when asked how CE architecture, pooled/dedicated provisioning, autoscale, OMS/QueryGrid/PrivateLink or state semantics work, or why the console, API and engine disagree on status. Triggers on GCS/cog-global-compute, accp-metadata-service, LMO, SCOrch, ce-autoscaler, CE/site IDs (CEAM*/CEAZ*, TDICAM*/TDICAZ*), error codes (4529/9710, 7825, ARM 409, Event 13912), even a bare CE ID plus a state word. Bundles tested log parsers - use them, never parse inline. Not for Teradata SQL/DBA work or CE feature development.
+description: Teradata VantageCloud Lake Compute Engine (CE) ops - knowledge base, log triage, RCA writeup. Use when a CE or site is stuck, failed, degraded, or won't start (FAILED_PROVISIONING, NOT_PROVISIONED, down/hardstop, stuck Starting/Stopping, expand vconfig), when analyzing CloudWatch Insights exports, messages syslog or Salt minion logs, when you need the root cause of a CE incident or Jira, and when writing it up as an RCA or postmortem. Also use when asked how CE architecture, pooled/dedicated provisioning, autoscale, OMS/QueryGrid/PrivateLink or state semantics work, why the console, API and engine disagree on status, or why views, UDFs, roles or grants vanish across a stop/start. Triggers on GCS/cog-global-compute, accp-metadata-service, LMO, SCOrch, ce-autoscaler, CE/site IDs (CEAM*/CEAZ*, TDICAM*/TDICAZ*), error codes (4529/9710, 7825, ARM 409, Event 13912). Bundles tested log parsers - use them, never parse inline. Not for general SQL tuning, DBA work, or CE feature development.
 license: internal
 ---
 
 # CE Ops — know it, triage it, write it up
 
-This skill merges three formerly separate skills into one pipeline, built from
-**232 coding-agent sessions**, **535 Jira issues / 3,462 comments**, and a verification
-pass against the checked-out repos. Nothing here comes from READMEs (repeatedly proven
-stale — evidence only).
+This skill is one pipeline with three capabilities, built from **232 coding-agent
+sessions**, **535 Jira issues / 3,462 comments**, and a verification pass against the
+service repos. Nothing here comes from READMEs (repeatedly proven stale — evidence only).
 
 | Capability | Module | Job |
 |---|---|---|
-| **KNOW** | `references/` — six corpus documents (map below) | Architecture, flows, state semantics, APIs, runbook, known defects |
+| **KNOW** | `references/` — seven corpus documents (map below) | Architecture, flows, state semantics, APIs, runbook, engine internals, known defects |
 | **TRIAGE** | `triage/TRIAGE.md` + `scripts/` | Root-cause a stuck/failed CE from CloudWatch JSON exports, `messages` syslog, Salt `minion` logs |
 | **WRITE** | `rca/RCA-WRITEUP.md` + `rca/example-*.md` | Turn a concluded investigation into the RCA comment or a shareable document, plus verification contract and registry row |
 
@@ -51,7 +50,7 @@ establish **which store** says X. Divergence between stores is itself a finding.
 
 ## The knowledge corpus (`references/`)
 
-The six documents cross-reference each other **by these exact filenames** — do not
+The seven documents cross-reference each other **by these exact filenames** — do not
 rename them. Commands quoted *inside* them use bare sibling filenames
 (`grep -in "9710" CE-SIGNATURE-REGISTRY.md`); prefix `references/` when you run them.
 The files are large; **grep for anchors, IDs, and error strings rather than reading
@@ -64,6 +63,7 @@ whole files** (`grep -n "^## \|^### " <file>` gives a live table of contents).
 | `CE-SIGNATURE-REGISTRY.md` | **The lookup table.** 60+ grep-able failure signatures with proven mechanisms, confirm steps and Jira keys; secondary-noise list; environment gotchas; verdict hazards | Pipeline step S2 (dedup) and whenever an error code / log phrase appears |
 | `CE-PROVISIONING-DEPROVISIONING.md` | **Provisioning deep dive.** Repo-by-repo walkthrough, auth model, full inter-service API matrix, deploy container + CloudFormation phases, image build pipeline, data stores, per-repo quick reference | How provisioning/teardown is implemented, which API calls what, CFN/Salt/Packer detail |
 | `CE-LIFECYCLE-AND-AUTOSCALE-ANALYSIS.md` | **Lifecycle deep dive.** Complete notification/event catalogue (verbatim payloads), the six state machines, START/STOP walkthroughs, autoscaler internals, the autoscale "degraded→STOPPED" root cause with `file:line` evidence, lifecycle defects 1–27, who-writes-which-field (Appendix A), vocabulary mismatch matrix (Appendix B) | Events/notifications, state-machine transitions, autoscale, status-divergence bugs |
+| `CE-DATA-PLANE.md` | **Inside the engine.** Leader/follower vprocs, the map system and why autoscale versions the spool map, the NLB's non-role, the FirstConfig ruleset, OMS/MCS object capture & replay, collections (what `collection_id` names), the database hierarchy, the three roles, the persistence contract, and the documented limitations that mimic D3/D6 defects | Objects or grants missing after a stop/start, "the CE is slow", spool-map/drain questions, role and grant scope, anything in SOP domains D3–D6. **Design-doc sourced, not code-verified** |
 | `diagrams-mermaid-code.md` | **Legacy diagram pack.** 8 importable Mermaid diagrams: full architecture, SCOrch + pooled provisioning sequences, network/PrivateLink, auto-suspend, LMO workflows, image build pipeline, data-store/queue map | When a renderable diagram or sequence view is wanted — **but it predates the verification pass**: Provisioning §16 lists **16 verified corrections against this file** (e.g. pooling is ECS Fargate/Litestar/ALB with Ping-JWT, not the Lambda+SQS+IAM shown in Diagram 1). Cross-check every arrow against Provisioning §16; labels contain em-dashes, which break the KB §9.4 pure-ASCII render rule — sanitise before `mmdc` |
 
 Routing by question:
@@ -83,6 +83,9 @@ Routing by question:
 | Show me a diagram of X / render the architecture | KB §2 diagrams (verified) and §8.3 triage tree first; `diagrams-mermaid-code.md` for sequence/pipeline views — apply Provisioning §16 corrections before citing |
 | Recommended fixes — code-level and systemic | Lifecycle Part 7 + SOP §14 programme-level fixes |
 | Investigation concluded — write it up / close the ticket | `rca/RCA-WRITEUP.md` (Jira comment + shareable-document templates, house style, verification contract, closure rules, registry row); `rca/example-*.md` for two full worked writeups |
+| Objects, grants, views or UDFs missing after a stop/start | `CE-DATA-PLANE.md` §9 persistence contract, then §10 limitations — **before** collecting D3 evidence |
+| What runs inside the engine; why a query is slow; what a spool map is | `CE-DATA-PLANE.md` §1–§4 |
+| Which cloud account is a thing in / cross-account failures | KB §2.5 boundaries diagram + §8.1 account map |
 | Acronym I don't recognise | KB §10.1 glossary |
 
 ### ID namespaces — cite unambiguously
@@ -175,8 +178,15 @@ These rules come from the documents themselves and from real investigation failu
 (registry "Verdict hazards"). Apply them to your own answers:
 
 - **Carry the markers.** Claims are tagged `[as-deployed]` (what the incident logs
-  showed), `[current]` (verified in the working tree, stamped in KB §0), or
+  showed), `[current]` (verified in the working tree, stamped in KB §0), `[design-doc]`
+  (stated in an internal design document — intent, not observed behaviour), or
   `[inferred]` (hypothesis). Preserve the distinction when answering.
+- **`CE-DATA-PLANE.md` is the one document that was never code-verified.** It is derived
+  from internal design docs, so everything in it is `[design-doc]` unless marked otherwise:
+  above `[inferred]`, below `[current]` and `[as-deployed]`. It fills real gaps — the SOP's
+  own D3 note calls that domain "least documented" — but when it disagrees with a log or a
+  code path, the log or code path wins. Its §12 lists the known conflicts (the OMS and LMO
+  acronym expansions among them); do not resolve those silently in an RCA.
 - **When the documents disagree, precedence follows verification recency:** KB §0 stamp +
   **KB §5.6 behaviour changes** override the deep docs, whose `[current]` claims override
   their own `[as-deployed]` incident narratives (Provisioning §16 likewise corrects the
@@ -185,13 +195,13 @@ These rules come from the documents themselves and from real investigation failu
   visual scaffolding, never as evidence. The **triage module's factual claims**
   (architecture, accounts, its "two state machines") are observation-era and sit low in
   the chain too — the corpus has already corrected one (GNS owner account; see the
-  bridge note in `triage/TRIAGE.md`) — but its *procedures, checkpointing protocol, and
+  precedence section in `triage/TRIAGE.md`) — but its *procedures, checkpointing protocol, and
   scripts* are canonical for log handling regardless. Several fixes **changed the state
   machine after the deep docs were written** — check KB §5.6 before describing pooled
   OMS gating, telemetry guards, or state transitions. Ultimate tie-break: the working
   tree itself.
 - **`file.go:NNN` references are grep anchors, not addresses.** Line numbers drift
-  between branches; search for the quoted symbol instead.
+  across trees; search for the quoted symbol instead.
 - **Never trust READMEs/SPECs/docstrings in these repos** — the KB documents specific
   load-bearing lies (`get_status()` claims to debounce and doesn't; `CopySecretForQueryGrid`
   claims to poll and doesn't). Code and logs only.
@@ -223,67 +233,49 @@ These rules come from the documents themselves and from real investigation failu
   installed, say so and deliver the Markdown from `rca/RCA-WRITEUP.md` instead — Markdown
   is the default deliverable and pastes cleanly into Jira, Slack, or Confluence.
 
-## Supersedes and boundaries
+## Boundaries
 
-- This skill **absorbs and supersedes** the standalone `ce-log-triage` and `rca-writeup`
-  skills: their content lives in `triage/` and `rca/` here, and references to those
-  skill names inside the corpus docs (SOP step S4, KB §8) resolve to these modules.
-  Both standalone skills have been removed from this repository. If a copy is still
-  installed anywhere else, **disable it** to avoid double-triggering.
-- Several paths referenced inside the documents are **not bundled** and live in the
-  `~/workspace/compute-engine` repo: `script/log-extract/ce-provisioning-sequence.md`
-  and `ce-failure-decision-tree.md` (plus `cleanup_ce_configs.sh` and `/tmp/ce-kb/`
-  extraction artifacts). If asked for them, say where they live rather than guessing —
-  the loss is small: KB §8.3 has its own triage decision tree, and the provisioning
-  sequence is covered by KB F4–F6 and Provisioning §7–§10. Likewise the per-service
-  `SPEC.md` / `STATE.md` / `HEALTH_MONITOR_REQUIREMENTS.md` files cited throughout are
-  **source-repo citations, not bundled docs** — treat them as grep anchors in the service
-  repos, and remember the corpus rule that these specs are not trustworthy on their own.
+- **Only paths under this skill directory are in package.** If a citation points outside
+  `skills/ce-ops/` (another workspace tree, a service checkout, `/tmp/…`, or a one-off
+  script), say that it is not shipped here — do not invent the file or its contents.
+  Triage and provisioning coverage that matters for incidents lives in-package: KB §8.3
+  (decision tree), KB F4–F6, and Provisioning §7–§10.
+- Per-service `SPEC.md` / `STATE.md` / `HEALTH_MONITOR_REQUIREMENTS.md` (and similar)
+  cited in the corpus are **source-repo grep anchors**, not bundled docs. They are not
+  authoritative on their own — prefer code paths, log lines, and the verified corpus.
 - Out of scope (shared vocabulary, different work): writing/reviewing application code
   for the CE services themselves, generic AWS/CloudWatch questions with no CE involved,
   NLB/PrivateLink *design* discussions, and non-CE systems (Kubernetes/EKS, RAG
   pipelines).
+- **The SQL/DBA boundary moved** when `CE-DATA-PLANE.md` landed. Still out: general Teradata
+  query tuning, capacity planning, DBA administration. **In**: why a CE's objects, roles or
+  grants did not survive a stop/start, why a query lands on `TD_MAP1` instead of
+  `TD_SpoolMap`, what PERM space a CE actually has. Those are CE-shape questions that happen
+  to be phrased in SQL, and the corpus now answers them.
 
 ## Maintenance
 
-The corpus in `references/` is a **snapshot**; the originals live in the user's
-`~/workspace/compute-engine` repo. When an investigation produces new knowledge, follow
-the docs' own maintenance contracts (KB §10.4, registry "Maintenance", SOP S10): new flow
-→ KB §4 as F21+; new incident → KB §7; new defect → KB §9; new endpoint/table/log group
-→ KB §8; behaviour change → KB §5.6 + mark the incident fixed; confirmed root cause →
-new registry row. Offer to update both the workspace original and the skill copy so they
-don't drift, and keep the three rules that made these documents useful: cite code paths
-or log lines (never a README), mark every claim as-deployed/current/inferred, and label
-every diagram arrow with the call and the reason.
+The corpus in `references/` is a **snapshot**. When an investigation produces new
+knowledge, follow the docs' own maintenance contracts (KB §10.4, registry "Maintenance",
+SOP S10): new flow → KB §4 as F21+; new incident → KB §7; new defect → KB §9; new
+endpoint/table/log group → KB §8; behaviour change → KB §5.6 + mark the incident fixed;
+confirmed root cause → new registry row; engine internals or database-object behaviour →
+`CE-DATA-PLANE.md` (leave the registry's *Documented product limitations* section
+unnumbered — it sits outside the `#N` space by design). Prefer citing code paths or log
+lines (never a README), mark every claim as-deployed/current/design-doc/inferred, and label
+diagram arrows with the call and the reason.
 
-Module provenance: `triage/` mirrors the former ce-log-triage skill — TRIAGE.md is its
-former SKILL.md body with paths adjusted, a merged-skill bridge (registry cross-map +
-precedence) added, and one account attribution corrected against the corpus (GNS owner —
-now fixed in `TROUBLESHOOTING.md`, `REFERENCE.md` A.2 and its box diagram, and
-`TRIAGE.md`; push the same correction to any workspace original). The bundled `scripts/` are a
-**rewrite** of that skill's versions, not a copy: `parse_cloudwatch.py` roughly doubled
-(adds `--site`, `--width`, `--limit`, `--no-skip`, and the stats/grep/show views) and
-`triage_syslog.sh` gained `set -euo pipefail` and the next-command hint. Both were then
-made encoding-safe — they emit ASCII arrows and tolerate a cp1252 or `LC_ALL=C` console,
-because the default `parse_cloudwatch.py` view previously died with UnicodeEncodeError on
-Windows. `rca/RCA-WRITEUP.md` **merges** the SOP/Jira artifacts with the former
-rca-writeup skill's body, which contributed the shareable-document template, the
-house-style conventions, the build procedure, the mistakes list, and the two worked
-examples now in `rca/example-*.md`.
+**The highest-value maintenance action available** is verifying one of `CE-DATA-PLANE.md`'s
+`[design-doc]` claims against code or a log: promote the marker and record what you checked.
+Its §12 lists the open conflicts worth settling first — the OMS/LMO acronym expansions, and
+whether database objects are restored from a DSA archive or by MCS replaying DDL. Scope `[current]` claims with a **commit SHA** (and deploy env or
+version when known) — see KB §0 — not with a git branch name alone.
 
-This SKILL.md itself carries **derived** content — the condensed pipeline, the routing
-table, and the namespace table. If the SOP pipeline, registry conventions, module set,
-or document structure change, update those sections here in the same pass; a stale
+This SKILL.md carries **derived** content — the condensed pipeline, the routing table,
+and the namespace table. If the SOP pipeline, registry conventions, module set, or
+document structure change, update those sections here in the same pass; a stale
 condensation that contradicts the full SOP is worse than none.
 
-Known upstream errata. **Corrected in these snapshots, still to fix in the workspace
-originals:** the SOP's companion header pointed at the two now-absorbed skills and
-placed the RCA at "Step 9" (it sits under **S10 — REGISTER**, §11.1) — both rewritten
-here to name `triage/TRIAGE.md` and `rca/RCA-WRITEUP.md`; and the GNS-account
-mis-attribution, which named the privatelink-monitor account as the Network Service
-owner — corrected across `triage/TROUBLESHOOTING.md`, `triage/REFERENCE.md` (A.2 table
-and box diagram) and `triage/TRIAGE.md`, since the wrong value there is an escalation
-target. **Still open everywhere:** the
-SOP's companion header says the registry has **58** signatures (it now runs to **#62**
-after the Aug-2026 batch), and triage signatures **S5/S6/S7** are confirmed root causes
-with no registry row (file as #63+).
+**Open corpus hygiene (not blockers for triage):** triage signatures **S5/S6/S7** are
+confirmed root causes with no registry row yet (file as #63+ per the registry maintenance
+rule).

@@ -21,7 +21,7 @@ Skills encode the workflows, quality gates, and best practices that senior engin
 
 ## Commands
 
-8 slash commands that map to the development lifecycle. Each one activates the right skills automatically.
+9 slash commands that map to the development lifecycle. Each one activates the right skills automatically.
 
 | What you're doing | Command | Key principle |
 |-------------------|---------|---------------|
@@ -29,6 +29,7 @@ Skills encode the workflows, quality gates, and best practices that senior engin
 | Plan how to build it | `/plan` | Small, atomic tasks |
 | Build incrementally | `/build` | One slice at a time |
 | Prove it works | `/test` | Tests are proof |
+| Set the quality bar | `/constraints` | Decide it once, enforce it everywhere |
 | Review before merge | `/review` | Improve code health |
 | Audit web performance | `/webperf` | Measure before you optimize |
 | Simplify the code | `/code-simplify` | Clarity over cleverness |
@@ -45,7 +46,7 @@ Skills also activate automatically based on what you're doing — designing an A
 **Fastest path — any agent, one command.** The open [skills CLI](https://github.com/vercel-labs/skills) installs into 70+ agents (Claude Code, Cursor, Codex, Copilot, Cline, and more):
 
 ```bash
-npx skills add addyosmani/agent-skills            # install all 24 skills
+npx skills add addyosmani/agent-skills            # install all 25 skills
 npx skills add addyosmani/agent-skills --list     # browse before installing
 ```
 
@@ -152,7 +153,7 @@ Add skill contents to your Windsurf rules configuration. See [docs/windsurf-setu
 <details>
 <summary><b>OpenCode</b></summary>
 
-Uses agent-driven skill execution via AGENTS.md and the `skill` tool.
+Copy skills to `.opencode/skills/` (or `~/.config/opencode/skills/`), add a project-local `AGENTS.md`, and use the built-in `skill` tool for agent-driven execution. Optional slash commands can be added under `.opencode/commands/`.
 
 See [docs/opencode-setup.md](docs/opencode-setup.md).
 
@@ -258,11 +259,11 @@ Already installed? How you roll the pack out depends on your codebase. The **[Ad
 
 ---
 
-## All 25 Skills
+## All 26 Skills
 
-The commands above are entry points. This repository carries 25 skills — 23 lifecycle skills, the `using-agent-skills` meta-skill, and one internal operations skill. Each skill is a structured workflow with steps, verification gates, and anti-rationalization tables. You can also reference any skill directly.
+The commands above are entry points. This repository carries 26 skills — 24 lifecycle skills, the `using-agent-skills` meta-skill, and one internal operations skill. Each skill is a structured workflow with steps, verification gates, and anti-rationalization tables. You can also reference any skill directly.
 
-> **The install commands above deliver 24 skills.** `ce-ops` is marked `license: internal` and is deliberately excluded from the public pack — it carries organisation-specific infrastructure knowledge and is not distributed. Everything else on this page is in the public pack.
+> **The install commands above deliver 25 skills.** `ce-ops` is marked `license: internal` and is deliberately excluded from the public pack — it carries organisation-specific infrastructure knowledge and is not distributed. Everything else on this page is in the public pack.
 
 ### Meta - Discover which skill applies
 
@@ -277,6 +278,7 @@ The commands above are entry points. This repository carries 25 skills — 23 li
 | [interview-me](skills/interview-me/SKILL.md) | One-question-at-a-time interview that extracts what the user actually wants instead of what they think they should want, until ~95% confidence | The ask is underspecified, or the user invokes "interview me" / "grill me" |
 | [idea-refine](skills/idea-refine/SKILL.md) | Structured divergent/convergent thinking to turn vague ideas into concrete proposals | You have a rough concept that needs exploration |
 | [spec-driven-development](skills/spec-driven-development/SKILL.md) | Write a PRD covering objectives, commands, structure, code style, testing, and boundaries before any code | Starting a new project, feature, or significant change |
+| [constraint-driven-development](skills/constraint-driven-development/SKILL.md) | Interviews you for a quality bar with sane default thresholds, writes CONSTRAINTS.md, places each check by cost, and catches agents silencing checks or skipping tests to get green | No standards are written down, or an agent is producing more than anyone reads |
 
 ### Plan - Break it down
 
@@ -399,10 +401,11 @@ Every skill follows a consistent anatomy:
 
 ```
 agent-skills/
-├── skills/                            # 25 skills (23 lifecycle + 1 meta + 1 internal)
+├── skills/                            # 26 skills (24 lifecycle + 1 meta + 1 internal)
 │   ├── interview-me/                  #   Define
 │   ├── idea-refine/                   #   Define
 │   ├── spec-driven-development/       #   Define
+│   ├── constraint-driven-development/ #   Define
 │   ├── planning-and-task-breakdown/   #   Plan
 │   ├── incremental-implementation/    #   Build
 │   ├── context-engineering/           #   Build

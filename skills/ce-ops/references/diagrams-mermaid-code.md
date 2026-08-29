@@ -21,7 +21,7 @@ graph TB
         APIGW_NET["HTTP API Gateway<br/>accp-network-service<br/>VPC Link"]
     end
 
-    subgraph GC["cog-global-compute — Central Orchestrator"]
+    subgraph GC["cog-global-compute - Central Orchestrator"]
         GC_AUTH["Authorizer Lambda<br/>JWT Validation<br/>256MB / 30s"]
         GC_API["API Lambda<br/>Cluster CRUD + Config<br/>1024MB / 60s"]
         GC_STATUS["Status Monitor Lambda<br/>CloudWatch Events 3min<br/>2048MB / 15min"]
@@ -32,7 +32,7 @@ graph TB
         GC_SQS["SQS FIFO<br/>auto-suspend-queue-env"]
     end
 
-    subgraph META["accp-metadata-service — Config and State Store"]
+    subgraph META["accp-metadata-service - Config and State Store"]
         META_API["Service Lambda<br/>Config/Org/Site CRUD<br/>localhost:5005 dev"]
         META_CCP["Config Change<br/>Processor Lambda<br/>DDB Streams trigger"]
         META_EVT["Event Processor<br/>Lambda<br/>SQS metering events"]
@@ -43,20 +43,20 @@ graph TB
         META_DDB_CTR[("DynamoDB<br/>ce-site-id-counter<br/>Atomic counter")]
     end
 
-    subgraph NET["accp-network-service — VPC and Networking"]
+    subgraph NET["accp-network-service - VPC and Networking"]
         NET_API["Network Service<br/>ECS Fargate :8080<br/>Go REST API"]
         NET_DDB_SITE[("DynamoDB<br/>network-svc-sites")]
         NET_DDB_STATUS[("DynamoDB<br/>network-svc-status<br/>TTL: 4 weeks")]
     end
 
-    subgraph LMO["svc-vce-lmo — Lifecycle Orchestrator"]
+    subgraph LMO["svc-vce-lmo - Lifecycle Orchestrator"]
         LMO_API["LMO API<br/>Granian :8000<br/>Litestar Python"]
         LMO_WORKER["Celery Workers<br/>ECS Fargate<br/>20+ workflow flows"]
         LMO_SQS["SQS FIFO<br/>Celery Broker"]
         LMO_REDIS[("ElastiCache<br/>Redis/Valkey 7<br/>Results + Scheduler")]
     end
 
-    subgraph POOL["pooling-service — Pooled Clusters"]
+    subgraph POOL["pooling-service - Pooled Clusters"]
         POOL_API["API Lambda<br/>Pool/Cluster REST<br/>512MB / 5min"]
         POOL_WORKER["Worker Lambda<br/>SQS Operations<br/>1024MB / 15min"]
         POOL_JOB["Job Lambda<br/>SQS Jobs<br/>1024MB / 15min"]
@@ -78,8 +78,8 @@ graph TB
 
     subgraph PLATFORM["Platform Services"]
         SCORCH["SCOrch Gateway"]
-        CIDS["CIDS — RBAC"]
-        CSM["CSM — Secrets"]
+        CIDS["CIDS - RBAC"]
+        CSM["CSM - Secrets"]
         SITEGW["Site Gateway"]
         DNS_SVC["DNS Service"]
         VALTIX["Valtix Firewall"]
@@ -187,38 +187,38 @@ sequenceDiagram
     participant CFN as CloudFormation
     participant ENGINE as VCE DB Engine
 
-    Note over User,ENGINE: PHASE 1 — Authentication and Authorization
+    Note over User,ENGINE: PHASE 1 - Authentication and Authorization
     User->>APIGW: POST /clusters {site_id, config_id}<br/>Header: Authorization: Bearer {jwt}
     APIGW->>Auth: Forward token for validation
     Auth->>PING: GET /pf/JWKS (fetch signing keys)
     PING-->>Auth: JWKS response (RSA public keys)
     Auth->>Auth: Verify JWT signature, expiry, claims
     Auth-->>APIGW: IAM Policy {Allow, principalId, context}
-    Note right of Auth: Log: correlation_id, request_id,<br/>layer=authorizer, issuer, claims
+    Note right of Auth: Log: correlation_id, request_id, layer=authorizer, issuer, claims
 
-    Note over User,ENGINE: PHASE 2 — Request Processing
+    Note over User,ENGINE: PHASE 2 - Request Processing
     APIGW->>GC: Proxy request with auth context
     GC->>GC: Extract correlation_id from X-Correlation-ID header
     GC->>CIDS: POST /v1/rbac/resolve {token, resource, action}
     CIDS-->>GC: {allowed: true, roles: [...]}
-    Note right of GC: Log: correlation_id, layer=service,<br/>site_id, config_id, provisioner
+    Note right of GC: Log: correlation_id, layer=service, site_id, config_id, provisioner
 
-    Note over User,ENGINE: PHASE 3 — Config Validation
+    Note over User,ENGINE: PHASE 3 - Config Validation
     GC->>META: GET /v1/compute-engine-configs/{config_id}<br/>Header: X-Correlation-ID
     META->>META: Query DDB compute-engine-configs table
     META-->>GC: {state, site_id, provisioner: SCORCH, org_name}
     GC->>GC: Validate state allows provisioning
 
-    Note over User,ENGINE: PHASE 4 — State Transition and SCOrch Dispatch
+    Note over User,ENGINE: PHASE 4 - State Transition and SCOrch Dispatch
     GC->>META: PATCH /v1/compute-engine-configs/{config_id}<br/>{state: PROVISIONING}
     META-->>GC: 200 OK (state updated)
     GC->>SCORCH: POST /scorch/v2/components via Site Gateway<br/>{manifest, params}
     SCORCH-->>GC: {component_id: comp-xxxx}
     GC->>DDB: PutItem {site_id, config_id,<br/>component_id, status: PROVISIONING,<br/>provisioner: SCORCH, created_at}
-    Note right of DDB: Log: correlation_id, layer=util,<br/>dynamodb_table, site_id, config_id
+    Note right of DDB: Log: correlation_id, layer=util, dynamodb_table, site_id, config_id
     GC-->>User: 202 Accepted {cluster_id, status: PROVISIONING}
 
-    Note over SCORCH,ENGINE: PHASE 5 — Infrastructure Deployment (async)
+    Note over SCORCH,ENGINE: PHASE 5 - Infrastructure Deployment (async)
     SCORCH->>PROV: Launch Docker container<br/>COMPONENT_JOB_TYPE=CREATE
     PROV->>PROV: Phase 1/5: setup (AMI, IAM, S3, subnet)
     PROV->>CFN: Phase 2/5: deploy CloudFormation stack
@@ -227,7 +227,7 @@ sequenceDiagram
     ENGINE-->>PROV: {state: READY}
     PROV->>PROV: Phase 4-5: telemetry + viewpoint
 
-    Note over GC,ENGINE: PHASE 6 — Status Monitor (every 3 min)
+    Note over GC,ENGINE: PHASE 6 - Status Monitor (every 3 min)
     loop Status Monitor Lambda every 3 minutes
         GC->>DDB: Scan non-terminal clusters
         DDB-->>GC: [{site_id, config_id, component_id}]
@@ -235,7 +235,7 @@ sequenceDiagram
         SCORCH-->>GC: {status: RUNNING}
         GC->>DDB: UpdateItem status = RUNNING
         GC->>META: PATCH state = RUNNING
-        Note right of GC: Log: service=status-monitor,<br/>component_id, status=RUNNING
+        Note right of GC: Log: service=status-monitor, component_id, status=RUNNING
     end
 ```
 
@@ -259,7 +259,7 @@ sequenceDiagram
     participant GC_DDB as DynamoDB<br/>cluster-provisioning-env
     participant STATUS as Status Monitor Lambda<br/>global-compute-stack-env-status-monitor
 
-    Note over User,STATUS: PHASE 1 — Request and Delegation
+    Note over User,STATUS: PHASE 1 - Request and Delegation
     User->>GC: POST /clusters {config_id, provisioner: POOLED}
     GC->>META: GET /v1/compute-engine-configs/{config_id}
     META-->>GC: {provisioner: POOLED, state, site_id}
@@ -267,14 +267,14 @@ sequenceDiagram
     GC->>POOL_API: POST /clusters {instanceType, nodeCount}<br/>IAM Auth (Sigv4 signed)
     Note right of GC: Log: correlation_id, provisioner=POOLED
 
-    Note over POOL_API,EC2: PHASE 2 — Pooling Queues the Job
+    Note over POOL_API,EC2: PHASE 2 - Pooling Queues the Job
     POOL_API->>POOL_DDB: CreateItem {cluster_id, status: CREATING}
     POOL_API->>SQS_JOBS: SendMessage {jobType: CREATE_CLUSTER,<br/>clusterID, retryCount: 0, maxRetries: 3}
     POOL_API-->>GC: 202 Accepted {cluster_id}
     GC->>GC_DDB: PutItem {site_id, config_id, status: PROVISIONING}
     GC-->>User: 202 Accepted
 
-    Note over SQS_JOBS,EC2: PHASE 3 — Job Lambda Creates Cluster
+    Note over SQS_JOBS,EC2: PHASE 3 - Job Lambda Creates Cluster
     SQS_JOBS->>JOB: Lambda trigger (batch size: 1)
     JOB->>POOL_DDB: FindAvailablePool(instanceType)
     alt Pool exists with capacity
@@ -284,17 +284,17 @@ sequenceDiagram
         EC2-->>JOB: {asg_name}
         JOB->>POOL_DDB: SavePool {pool_id, asg_name}
     end
-    JOB->>EC2: ScalePool — set DesiredCapacity
-    JOB->>EC2: WaitForInstances — poll until Running
+    JOB->>EC2: ScalePool - set DesiredCapacity
+    JOB->>EC2: WaitForInstances - poll until Running
     EC2-->>JOB: Instances ready
 
-    Note over SQS_OPS,EC2: PHASE 4 — Worker Sets Up Cluster
+    Note over SQS_OPS,EC2: PHASE 4 - Worker Sets Up Cluster
     JOB->>SQS_OPS: SendMessage {operationType: SETUP, clusterID}
     SQS_OPS->>WORKER: Lambda trigger (batch size: 1)
     WORKER->>WORKER: SetupCluster on each node via HTTP :8080
     WORKER->>POOL_DDB: UpdateItem status = ACTIVE
 
-    Note over GC,STATUS: PHASE 5 — Status Monitor Detects Running
+    Note over GC,STATUS: PHASE 5 - Status Monitor Detects Running
     loop Every 3 minutes
         STATUS->>GC_DDB: Scan PROVISIONING + provisioner=POOLED
         STATUS->>POOL_API: GET /clusters/{cluster_id}

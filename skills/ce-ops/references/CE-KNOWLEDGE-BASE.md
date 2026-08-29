@@ -19,6 +19,8 @@
 |---|---|
 | Understand the system in 5 minutes | [§1 Orientation](#1-orientation) + [§2.1 labelled call graph](#21-control-plane--labelled-call-graph) |
 | See what a customer's SQL actually traverses | [§2.2 Data plane](#22-data-plane--what-a-sql-client-actually-traverses) |
+| See which cloud **account** each piece sits in | [§2.5 Account & trust boundaries](#25-account--trust-boundaries) and [§8.1](#81-account--environment-map) |
+| Understand what runs *inside* the engine, or why database objects vanished | `CE-DATA-PLANE.md` |
 | Know who owns which piece of state | [§2.3](#23-who-owns-which-piece-of-state) then [§5](#5-state-models-the-vocabulary-problem) |
 | Trace one specific flow end-to-end | [§4 The flows](#4-the-flows) — F1…F20 |
 | Know which status means what, and who writes it | [§5 State models](#5-state-models-the-vocabulary-problem) |
@@ -28,18 +30,20 @@
 | Know what is broken by design | [§9 Defect & design-gap register](#9-defect--design-gap-register) |
 | Know what this document does *not* cover | [§10.3 Known limits](#103-known-limits-of-this-document) |
 
-**Companion documents in this repo** (deeper, narrower):
+**Companion documents bundled with this skill** (same `references/` directory — deeper, narrower):
 
 | Document | Covers |
 |---|---|
 | `CE-PROVISIONING-DEPROVISIONING.md` | Repo-by-repo provisioning/deprovisioning walkthrough, API matrix, CFN/Salt/Packer detail |
 | `CE-LIFECYCLE-AND-AUTOSCALE-ANALYSIS.md` | Exhaustive notification catalogue (H1–H29, A1–A13), the six state machines, autoscale internals, the "degraded" defect chain |
+| `CE-DATA-PLANE.md` | Engine internals (leader/follower vprocs, maps, spool-map versioning), OMS/MCS object capture & replay, collections, the database hierarchy, roles, the persistence contract, and the documented product limitations that mimic D3/D6 defects. **Design-doc sourced, not code-verified** — see its provenance banner. |
 | `diagrams-mermaid-code.md` | 8 architecture/sequence diagrams |
-| `script/log-extract/ce-provisioning-sequence.md` | The single provisioning sequence diagram (OMS wait + QG independence) |
-| `script/log-extract/ce-failure-decision-tree.md` | Failure decision tree (which component failed → what status) |
 
-This KB is the **umbrella**: it summarises those, adds everything they don't cover
-(onboarding/identity, incidents, runbooks, cross-service auth), and cross-references them.
+Provisioning sequence detail and the failure decision tree also live in-package as
+**§4 flows F4–F6** and **§8.3** — use those; do not expect extra files outside this skill.
+
+This KB is the **umbrella**: it summarises the companions, adds everything they don't
+cover (onboarding/identity, incidents, runbooks, cross-service auth), and cross-references them.
 
 ---
 
@@ -52,6 +56,7 @@ This document contains two kinds of statement, and mixing them up will mislead y
 | **[as-deployed]** | The behaviour observed **in the incident**, on the code that was running in that environment at that time (mostly June–July 2026 preprod). This is what the logs show. |
 | **[current]** | The behaviour in the **checked-out working tree** at the time of the last verification pass. |
 | **[inferred]** | Not proven — a hypothesis consistent with the evidence. |
+| **[design-doc]** | Stated in an internal design document — design *intent*, which the deployed system may never have matched or may since have diverged from. Ranks **below** `[current]` and `[as-deployed]`, **above** `[inferred]`. Used throughout `CE-DATA-PLANE.md`, which was not part of the code-verification pass. |
 
 **Why this matters:** several incidents in §7 have since been fixed, and the fix *changed the
 state machine*. If you read only the incident description you will debug the wrong system.
@@ -59,36 +64,35 @@ The most important example is the pooled OMS gate — see [§5.6](#56-behaviour-
 
 ### Verification stamp (last pass)
 
-| Repo | Branch checked out | Commit | Last commit date |
-|---|---|---|---|
-| `cog-global-compute` | `GPSC-3907` (fork of `ga2base`) | `TBD` | 2026-07-29 |
-| `accp-metadata-service` | `gav2-release` (`version-1.1.2`) | `TBD` | 2026-07-28 |
-| `accp-network-service` | `azurepreprod` (`version-2.0.0-rc1`) | `TBD` | 2026-07-12 |
-| `svc-vce-lmo` | `oms-preflight-checks` | `TBD` | 2026-07-09 |
-| `cog-compute-engine-pooling-service` | `azure-preprod-v2` | `TBD` | 2026-07-22 |
-| `cog-compute-metering` | `main2` (`2.6.4`) | `TBD` | 2026-06-23 |
-| `cog-compute-engine-autoscaler` | `main` (`v1.0.6`) | `TBD` | 2026-07-27 |
-| `avcd-vce-engine-configure` | `develop` | `TBD` | 2026-05-26 |
-| `avcd-vce-engine-provision` | `master` (`v0.2.18`) | `TBD` | 2026-04-06 |
+`[current]` means: behaviour in the **tree identified by Commit** at Verified date.
+**Commit is required** for reproducibility. Prefer **deploy env** and **release/version
+tag** when saying whether a claim applies to an incident — not git branch names. In-body
+text that still names a branch is historical authoring scope from this pass; when you
+re-verify, rewrite those lines to SHA, version, or env.
 
-> ⚠️ **The branch is the scope of every `[current]` claim; the commit is what makes it
-> reproducible.** Only one of these repos is on plain `main` — the rest sit on release,
-> environment, or Jira-ticket branches, so a `[current]` claim verified on `GPSC-3907` says
-> nothing about `ga2base`, and the `develop`-only defects in §9 may not exist on your branch.
-> Branch names are ephemeral: feature branches like `GPSC-3907` and `oms-preflight-checks` get
-> merged and deleted, after which the branch column no longer resolves but the commit still
-> does. **Fill the `TBD` cells on the next verification pass** and treat the SHA as the durable
-> anchor — from the workspace root:
+| Repo | Commit | Version / note | Verified |
+|---|---|---|---|
+| `cog-global-compute` | `TBD` | — | 2026-07-29 |
+| `accp-metadata-service` | `TBD` | `version-1.1.2` | 2026-07-28 |
+| `accp-network-service` | `TBD` | `version-2.0.0-rc1` | 2026-07-12 |
+| `svc-vce-lmo` | `TBD` | — | 2026-07-09 |
+| `cog-compute-engine-pooling-service` | `TBD` | — | 2026-07-22 |
+| `cog-compute-metering` | `TBD` | `2.6.4` | 2026-06-23 |
+| `cog-compute-engine-autoscaler` | `TBD` | `v1.0.6` | 2026-07-27 |
+| `avcd-vce-engine-configure` | `TBD` | — | 2026-05-26 |
+| `avcd-vce-engine-provision` | `TBD` | `v0.2.18` | 2026-04-06 |
+
+> ⚠️ **Fill every `TBD` on the next verification pass.** Until then, treat `[current]` and
+> ✅ markers as provisional. From a workspace that checks out these repos:
 > ```bash
 > for r in cog-global-compute accp-metadata-service accp-network-service svc-vce-lmo \
 >          cog-compute-engine-pooling-service cog-compute-metering \
 >          cog-compute-engine-autoscaler avcd-vce-engine-configure avcd-vce-engine-provision; do
->   [ -d "$r/.git" ] && printf '%-38s %s %s\n' "$r" "$(git -C "$r" rev-parse --short HEAD)" \
->     "$(git -C "$r" rev-parse --abbrev-ref HEAD)"
+>   [ -d "$r/.git" ] && printf '%-38s %s\n' "$r" "$(git -C "$r" rev-parse --short HEAD)"
 > done
 > ```
 
-> ⚠️ **Line numbers drift between branches.** All `file.go:NNN` references are anchors for
+> ⚠️ **Line numbers drift across trees.** All `file.go:NNN` references are anchors for
 > `grep`, not addresses. Search for the quoted symbol or comment instead. Where a reference was
 > re-verified in the working tree it is marked ✅; where the symbol has since been renamed or
 > removed it is marked ⚠️.
@@ -112,6 +116,16 @@ that runs inside a customer **VantageCloud Lake "site"**. Each CE is described b
 Every request enters through the **Global Compute Service (GCS)**, which reads the config
 and branches on `compute.type` (`router_helper.go:127`): `POOLED` → Pooling Service,
 anything else → SCOrch.
+
+**Two site deployment models**, which decides whether an EDW exists at all:
+
+| Model | What it is | Consequence |
+|---|---|---|
+| **CE in an existing VCE site** | The CE VPC is added alongside the customer's existing VantageCloud Enterprise EDW | The normal case. QueryGrid, the OMS/MCS VM and the QG copy-secret all assume an EDW primary is present |
+| **CE-only site (EDWless)** | A site provisioned with no always-on EDW — Elastic Compute only | Anything that reads from the EDW primary breaks by construction: the `…-tdqg-node` secret is never created, so QG copy-secret fails after ~300 s with `SecretNotFoundError` (F6) |
+
+So "EDWless" is a **supported ordering option**, not a broken site. Establish which model a
+site uses before treating an EDW-dependent failure as a defect. `[design-doc]`
 
 ### 1.2 Key identifiers (you will see all of these in logs)
 
@@ -381,6 +395,86 @@ flowchart LR
 
 ---
 
+### 2.5 Account & trust boundaries
+
+The diagrams above group by **function**; this one groups by **cloud account**, because
+several of the corpus's hardest failures are cross-account operations and no other diagram
+shows those seams. Account IDs for each box are in [§8.1](#81-account--environment-map).
+
+The headline: **pooled and dedicated CEs do not run in the same account.** Dedicated nodes
+land in the customer's own VCE site account, in a CE VPC built by GNS; pooled nodes are drawn
+from a warm pool in a Teradata-owned pool account and never enter the customer's account at
+all. §2.2's data-plane diagram shows the *dedicated* topology.
+
+```mermaid
+flowchart TB
+    subgraph TDADMIN["Teradata admin accounts - control plane"]
+        GCS["GCS"]
+        META["Metadata Service"]
+        GNS["GNS"]
+        LMO["LMO"]
+        POOLSVC["Pooling Service"]
+    end
+
+    subgraph POOLACCT["Teradata pool account - POOLED nodes"]
+        WARM["Warm ASG - VMSS - MIG"]
+        PCL["Pooled cluster<br/>per-cluster security group"]
+        PNLB["NLB + endpoint service"]
+    end
+
+    subgraph SITEACCT["Customer VCE site account"]
+        subgraph EDWVPC["VCE database VPC"]
+            EDW["EDW nodes"]
+            SCAG["SCAgent"]
+            OMSVM["OMS + MCS VM<br/>one per site"]
+            QGM["QueryGrid Manager"]
+        end
+        subgraph CEVPC["CE VPC - built by GNS"]
+            DCL["Dedicated cluster"]
+            DNLB["NLB + endpoint service"]
+            NAT["NAT gateway"]
+        end
+    end
+
+    subgraph CUSTACCT["Customer's own account"]
+        EP["VPC interface endpoint"]
+        CLIENT["SQL clients - BI - ETL"]
+    end
+
+    GCS -->|"POST components via Site Gateway<br/>reason: only SCAgent may build in the customer account"| SCAG
+    SCAG --> DCL
+    GCS -->|"POST /v1/clusters<br/>reason: pooled nodes come from the warm pool"| POOLSVC
+    POOLSVC --> WARM --> PCL
+    GNS -->|"VPC - subnets - NLB - endpoint service<br/>reason: network must exist before the CE starts"| CEVPC
+    LMO -->|"AssumeRole source then target - copy tdqg-node secret<br/>reason: the pool account cannot read the site's secret"| POOLACCT
+    OMSVM -->|"secret source<br/>reason: QG config is minted beside the EDW"| LMO
+    CLIENT --> EP
+    EP -->|"PrivateLink tcp 1025 - stays on the cloud backbone<br/>reason: no public path to a CE node"| DNLB
+    EP -->|"PrivateLink tcp 1025<br/>reason: pooled CEs are reached the same way"| PNLB
+    DNLB --> DCL
+    PNLB --> PCL
+    DCL -->|"egress only - object store, IdP JWKS, SNS metering<br/>reason: no inbound path exists"| NAT
+```
+
+**Why this matters in practice:**
+
+- The QG **copy-secret** flow (F6) is a cross-account `AssumeRole(source)` →
+  `AssumeRole(target)` between exactly two of these boxes — site account to pool account.
+  `<POOLING_PREPROD_ACCT>` in §8.1 is the target; `<SITE_ACCT>` is the source.
+- LMO can only act inside a site account because IAM roles were pushed there by StackSets.
+  A missing or drifted role surfaces as a cross-account permission error, not a CE fault.
+- Pooled multi-tenancy is bounded by the **per-cluster security group**: pool VMs are shared
+  *before* assignment, but once a cluster forms, those VMs are exclusive to one customer for
+  the life of the cluster, and no other tenant's cluster can reach them.
+- Nodes in a cluster are always in **one AZ** (BYNET latency); the pool spans AZs so it can
+  place into whichever has capacity.
+
+`[design-doc]` for the pool-account placement and the StackSet role mechanism — the corpus
+verified neither, though §8.1's separate pool account and F5's warm-ASG claim are consistent
+with it. Confirm before citing in an RCA.
+
+---
+
 ## 3. Environments
 
 | Env | GCS | Metadata Service | Pooling service (region-templated) |
@@ -644,7 +738,8 @@ sequenceDiagram
     end
     API->>API: configMap = metadata config minus schedule, site_id, csp_details<br/>plus key_name, debug, experimental, dev (dev env only)
     API->>SC: POST /scorch/v2/components<br/>{name, manifest_name ce, manifest_version,<br/>platform, desired_status RUNNING, configuration}
-    Note over API,SC: the environment appears ONLY in the gateway host name<br/>https://{site_id}.gateway.{env}.cloud.CORP_DOMAIN
+    Note over API,SC: the environment appears ONLY in the gateway host name
+    Note over API,SC: https://{site_id}.gateway.{env}.cloud.CORP_DOMAIN
     API->>MD: PATCH state = PROVISIONING
     SC->>CTR: launch lifecycle container COMPONENT_JOB_TYPE=CREATE<br/>SCOrch injects ENVIRONMENT_NAME
     CTR->>CFN: deploy per-CE stack - 7 phases
@@ -729,7 +824,7 @@ sequenceDiagram
     alt oms_status FAILED or TIMEOUT   [current]
         API->>API: mappedStatus := FAILED_PROVISIONING
         API->>MD: PATCH state = FAILED_PROVISIONING
-        Note over API: status-monitor then deprovisions<br/>and triggers OMS deregistration
+        Note over API: status-monitor then deprovisions and triggers OMS deregistration
     else RUNNING
         API->>MD: PUT /infrastructure {status RUNNING, instances}
         Note over API,MD: no OMS gate any more - 409 from metadata means success
@@ -827,8 +922,11 @@ sequenceDiagram
 2. `*cluster.QGStatus == "NOT_PROVISIONED"`
 3. `cluster.Status == "RUNNING"`
 
-**`oms_status` is never read on this path**, for pooled *or* dedicated. Dedicated has no OMS
-step at all. This is the answer to the recurring question *"OMS registration failed — how did
+**`oms_status` is never read on this path**, for pooled *or* dedicated. Dedicated has no
+`oms_status` axis and **no OMS *gate*** on console status — but it does still register with
+OMS, inside the engine provision container (H26; Provisioning §7 + §9, phase 7, conditional). "No
+gate" is not "no registration": a dedicated CE can fail phase-7 registration and still show
+**Running**. This is the answer to the recurring question *"OMS registration failed — how did
 QG still get triggered?"*: **nothing links them.**
 
 **What "QueryGrid provisioning" actually is** (`svc-vce-lmo`): LMO creates a **SCOrch component**
@@ -855,7 +953,70 @@ then copies it cross-account into the CE-Secrets/pooled account. The source acco
 `OmsCEAdminJobFailedError` means LMO reached OMS fine and **OMS's own job failed** — commonly
 `"MCS API returned 400"`, i.e. OMS→MCS rejected the registration (duplicate registration,
 bad `address`/`collection_id`/`engine_id`, or the site not in a valid MCS state). The real
-detail is in the **OMS CE-Admin logs for that job id**, not in LMO.
+detail is in the **OMS CE-Admin logs for that job id**, not in LMO. For what a *collection*
+is — and why "duplicate registration" is the MCS name-conflict check firing across the
+Virtual System Group — see `CE-DATA-PLANE.md` §5–§6.
+
+> **Who actually calls `POST /oms/ce-admin/v1/compute-engines`.** The answer differs by CE
+> type, and on the live path it is **not GCS** in either case — route accordingly:
+>
+> | CE type | Coordinator | Registrar (makes the OMS call) | Evidence |
+> |---|---|---|---|
+> | **Dedicated** | GCS → SCOrch | **`avcd-vce-engine-provision`** — container phase 7, only when `ENABLE_OMS && !SKIP_PRIVATELINK && !PUBLIC` | H26; Provisioning §7 + §9; `src/oms/config.sh` |
+> | **Pooled** | GCS → Pooling Service | **`svc-vce-lmo`** via flow `oms-ce-registration`; Pooling enqueues the task and reports `oms_status` back to GCS | H14, H23; `pool_manager/oms_registration.py`; `lmo/flows/misc/oms/ce_registration.py` |
+>
+> GCS's own registration code (`omsService.go`, `orchestrationService.go`) is still in the tree
+> but its status-monitor call site is commented out — see §5.6 #4. So "the CE never appeared in
+> OMS" is a **container phase-7** question for dedicated and an **LMO flow** question for
+> pooled; it is a GCS question for neither. Note the dedicated conditions: a **public** CE, or
+> one with PrivateLink skipped, is *supposed* to have no OMS registration — absence there is
+> correct behaviour, not a fault. This is separate from provisioning the **site-level** OMS
+> component via LMO's `oms-create` workflows. `[current]`
+
+**QueryGrid has four parts**, and the corpus's QG incidents all touch the first and third:
+
+| Part | What it does | Where |
+|---|---|---|
+| **QGM** (QueryGrid Manager) | Control plane: stores systems, links and connectors; REST API everything else calls; monitoring and security | One VM per site, in the VCE database VPC |
+| **QG Fabric** | Data movement: parallel transfer, heartbeats, resiliency, error handling | Distributed across participating nodes |
+| **`tdqg-node`** | Per-host agent managing that host's Fabric and connector processes; reports health to QGM | Baked into the CE image, on every CE and EDW node |
+| **Connectors** | Per-system translators: Teradata (bidirectional), Hive, Spark, BigQuery, Oracle, generic JDBC, Arrow Flight SQL | Alongside the node service |
+
+**QueryGrid runtime topology — two paths, and only one of them is private.** The sequence
+above provisions QG; this is where the pieces then sit. QGM is a separate VM in the **VCE
+database VPC** (one per site, shared with any pre-existing QueryGrid deployment), while
+`tdqg-node` runs on every CE node and **boots waiting for its config file** — which is what
+the `{SITE_ID}-{config_id}-tdqg-node` secret above delivers. A copy-secret that never lands
+leaves those nodes waiting indefinitely rather than failing loudly. `[design-doc]`
+
+```mermaid
+flowchart LR
+    subgraph EDWVPC["VCE database VPC"]
+        QGM["QueryGrid Manager<br/>REST API - config store - monitoring"]
+        EDWN["EDW nodes<br/>tdqg-node on each"]
+    end
+
+    subgraph CEVPC["CE nodes"]
+        LEAD["leader<br/>tdqg-node"]
+        FOLL["followers<br/>tdqg-node"]
+    end
+
+    SGW["Site Gateway"]
+
+    LEAD -->|"register + fetch config over the public internet<br/>reason: CE NAT IP must be whitelisted on the gateway"| SGW
+    FOLL --> SGW
+    SGW -->|"control path only<br/>reason: QGM owns systems, links and connectors"| QGM
+    EDWN <-->|"data path - PrivateLink tcp 5100 - target group qgtg<br/>reason: query results must never traverse the internet"| LEAD
+
+    classDef warn fill:#ffebee,stroke:#c62828,color:#000
+    class SGW warn
+```
+
+The **control** path (registration, configuration) leaves the CE over the public internet via
+the Site Gateway; the **data** path (actual result transfer) is PrivateLink on **tcp 5100** —
+the `qgtg` target group in §2.2, the only one registered by *instance ID* rather than IP
+(§7.8). A rehydrate re-enables the existing QGM objects rather than recreating them;
+termination disables or deletes the CE's registration before the nodes go away.
 
 **Viewpoint** is registered by the Salt role `td_unlimited_viewpoint` **on the VM**, not by the
 provisioning container; the container only resolves credentials, passes them into the
@@ -898,7 +1059,8 @@ sequenceDiagram
     EVP->>MD: raw DynamoDB UpdateItem - no API - no state machine
     end
 
-    Note over API,MD: if the PATCH fails GCS logs<br/>dynamoDB update successful but metadata service update failed<br/>and the two stores silently drift
+    Note over API,MD: on PATCH failure GCS logs dynamoDB update successful
+    Note over API,MD: but metadata service update failed - the two stores drift silently
 ```
 
 ```
@@ -1044,6 +1206,13 @@ plus Salt orchestrations. **None of its state machine is visible to the cloud co
 | `state/autoscale/vconfig_expand.sls` | **Phase 2 (ordered):** set `max_cluster_index`, apply `vconfig` → `clique` → `vconfig.filter`, set `vconfig_complete`, fire `cluster/node/vconfig_complete` |
 | `orch/integrate_node_cluster.sls` | **Phase 3 (batched, on the leader):** start PDE → start DBS → `tpareconfig` → `ALTER SPOOL MAP … AMPCOUNT` → `cluster:state = IDLE` |
 | `orch/decommission_node_cluster.sls` | Contraction: drain, `DROP SPOOL MAP`, wait for vprocs GONE, remove scale-in protection |
+
+> **What `ALTER SPOOL MAP` / `DROP SPOOL MAP` are actually doing.** An expand builds a
+> *second, wider* spool map (`TD_SpoolMap2`) covering the old plus new CW AMPs; queries
+> already running stay on the original map until they finish, and only then is it dropped.
+> That drain is what `QUERY_DRAIN_TIMED_OUT` below reports, and the window between building
+> the new map and retiring the old one is where **registry #36** (REGULUS-3580) crashes. Full
+> mechanism in `CE-DATA-PLANE.md` §2.
 
 **Salt reactor bus** (`engine_reactor.conf`) — how it is all wired:
 
@@ -1233,6 +1402,22 @@ multi-group scaler with preference-ordered placement and fallback when a SKU is
 capacity-constrained; **GCP MIG** scaffolded (detection works, scaler methods return
 `ErrNotImplemented`).
 
+**The instance types that fallback chooses between** — worth knowing, because "no capacity"
+reads very differently when only one SKU is actually supported. Types are deliberately
+hidden from customers, who choose a size (1x = 16 vCPU, up to 32x), not a machine.
+`[design-doc]`
+
+| Cloud | Preferred | Fallback |
+|---|---|---|
+| AWS | `i4i` | `i7i`. Heterogeneous clusters are possible (one `12xl` may be replaced by three `4xl`) |
+| Azure | `Standard_L16s_v3` — **the only supported SKU**, a marketplace limitation | `Standard_E16s_v5` / `Standard_E16ds_v5` under evaluation, not yet available |
+
+If that SKU list is still accurate, a capacity-constrained `Standard_L16s_v3` has **nowhere to
+fall back to** on Azure and the fleet scaler's preference ordering has a single entry — which
+would make an Azure capacity failure expected behaviour under constraint (class R4) rather
+than a scaler defect. That conclusion is `[inferred]` from two design-doc statements: check
+the configured SKU list before leaning on it, since the evaluation SKUs may since have shipped.
+
 ---
 
 ### F10 — Stop: schedule, auto-suspend, and the "stop = destroy" surprise
@@ -1380,11 +1565,12 @@ sequenceDiagram
     MD->>MD: DDB GetItem - compute, cluster, csp_details, dns_name
     MD->>SSO: GetIdpConnections(WithSiteAccess(site_id))
     SSO-->>MD: issuer, client_id, username_claim, audience
-    Note over MD: OVERWRITES the DDB idp_settings snapshot.<br/>404 here is only a WARN and yields no idp_settings at all
+    Note over MD: OVERWRITES the DDB idp_settings snapshot
+    Note over MD: 404 here is only a WARN and yields no idp_settings at all
     MD->>CIDS: GET /resources/{ceCfgId} - roles_map
     MD->>CIDS: GET /rbac-roles?erp= - derive td_role from privileges
     MD->>SCIM: ResolveGroupUsers(site_id, idp_groups)
-    Note over MD: any unmatched role or group is log.Warn + continue<br/>the mapping is silently dropped
+    Note over MD: any unmatched role or group is log.Warn + continue - mapping silently dropped
     MD-->>GCS: data.idp_settings + data.user_role_mappings
 
     alt DEDICATED
@@ -1392,7 +1578,8 @@ sequenceDiagram
     else POOLED
         GCS->>PROV: payload global_configuration.idp_settings / .user_role_mappings
     end
-    Note over GCS,PROV: GCS relays verbatim - no transformation, no validation.<br/>The only difference is nesting depth
+    Note over GCS,PROV: GCS relays verbatim - no transformation, no validation
+    Note over GCS,PROV: the only difference is nesting depth
 
     PROV->>SALT: grains idp.settings[_encoded] + idp.user_role_mappings
     SALT->>TDGSS: tdgsseasyconfig update - JWTDynamicKey yes, IdentityProvider.Url = issuer
@@ -1606,9 +1793,10 @@ sequenceDiagram
     participant UI as Health Monitor UI
 
     HM->>HM: a service is degraded, or a config is in an RCA failure state
-    Note over HM: RCAFailureStates = FAILED_PROVISIONING - FAILED_TERMINATING<br/>FAILED_PRIVATELINK_DELETE - FAILED_CLUSTER_DELETE
+    Note over HM: RCAFailureStates = FAILED_PROVISIONING - FAILED_TERMINATING
+    Note over HM: FAILED_PRIVATELINK_DELETE - FAILED_CLUSTER_DELETE
     HM->>RCA: TriggerRCA(lookupKey, site_id, affected_service)
-    Note over RCA: idempotent - returns the existing record<br/>unless it is stale (older than 1 hour)
+    Note over RCA: idempotent - returns the existing record unless stale (older than 1 hour)
     RCA->>DIAG: submit investigation
     DIAG-->>RCA: investigation_id, status=running
     RCA->>RCA: PutItem {config_id, status=running, ttl}
@@ -2003,6 +2191,7 @@ flowchart TB
 | 1 | **OMS `FAILED`/`TIMEOUT` → `FAILED_PROVISIONING`** | `6c920bf3` GPSC-3811 | The CE now *fails* instead of hanging. The status-monitor's failed-state handler deprovisions it and fires `TriggerOMSCEDeregistration` (best-effort; a failure is recorded as `FAILED_DEREGISTRATION`). |
 | 2 | **Infra PUT no longer OMS-gated** | `e0a0cb80` GPSC-3735 | Comment now reads *"OMS registration is handled downstream and must not gate this path"*. Pooling reporting RUNNING is the sole readiness signal. A `409` from metadata means infra is already present → treated as success. |
 | 3 | **Stale `component_id` → 409** + **`FAILED_PROVISIONING` preserved on STOPPED** | `dbfa7e8c` GPSC-3811 | Kills two classes of out-of-order/masking bug. |
+| 4 | **GCS no longer registers dedicated CEs with OMS** | *(SHA not yet stamped — see §0)* | The status-monitor call site is commented out (`cmd/status-monitor/main.go:1404-1406`); `omsService.go` / `orchestrationService.go` remain in the tree, but their **registration** paths are no longer reached. **Deregistration is unaffected** — GCS still issues `DELETE …/compute-engines/{id}` on teardown, so H12 keeps its `DELETE` half and this row must not be read as retiring the whole file. Dedicated registration now happens in the **engine provision container** (H26), pooled through **LMO** (H23). Two consequences: H12's register/poll half is historical, and lifecycle defect 18's "three `collection_id` conventions" is now **two live** paths. `[current]` — from a source pass against `cog-global-compute`; record the SHA in §0 |
 
 **Also new:** `oms_status` can now be **`TIMEOUT`** (pooling's own 10-minute OMS wait) and
 **`FAILED_REGISTRATION`**, in addition to the values listed in §5.1.
@@ -2030,6 +2219,17 @@ is still open for AWS. And `idp/init.sls` still has both the `dbc/dbc` and
 | GNS/metadata → CSM | SigV4 `execute-api` + `X-Permission-Group` + `X-Api-Key`, via an assumed CSM role |
 | Engine (metering) → SNS | instance profile → `sts:AssumeRole` (with a fixed `ExternalId`); on Azure a 3-hop MI → App Registration → `AssumeRoleWithWebIdentity` |
 | LMO → Metadata (setup callback) | **HMAC-SHA256** `X-LMO-Signature` over the raw body |
+
+**Which role may call what on GCS.** The table above says *how* a caller authenticates;
+this says what CIDS will then authorise. A `403` that is not a token problem is usually a
+caller holding the read-only role. `[design-doc]`
+
+| Role | Allowed on clusters and configs |
+|---|---|
+| `TD-Customer-Admin` (VCE admin) | full CRUD |
+| `TD-Ops` (Teradata ops) | full CRUD |
+| `ServiceUpdateRequester` (`svc_update`) | GET + PUT/PATCH |
+| `ServiceReadRequester` (`svc_read`) | GET only, including pooling clusters |
 
 **Token-minting pattern learned the hard way** (ce-agent ADR-003): keep the minted token and
 the client credentials in a **process-wide singleton cache**; on 401 invalidate **only the
@@ -2470,7 +2670,7 @@ GET    /health
 | `Cluster status unchanged, no update needed` | the cron no-op (2,812× in GPSC-3907) |
 | `Cluster is RUNNING and QueryGrid is NOT_PROVISIONED, triggering QueryGrid provisioning` | the QG trigger |
 | `Triggering infrastructure PUT: status=RUNNING and oms_status=REGISTERED` | the console flips to Running |
-| `Upstream reports RUNNING but OMS not registered — gating RUNNING transition` | pooled OMS gate blocking |
+| `Upstream reports RUNNING but OMS not registered — gating RUNNING transition` | pooled OMS gate blocking. **Which gate matters:** the infra-PUT gate was removed by GPSC-3735 (§5.6 #2), so a *current* occurrence points at the `clusterService.go:2375-2410` path of open lifecycle defect 16, not at the old `poolingService.go` one — see §8.3's caveat |
 | `dynamoDB update successful but metadata service update failed` | the drift moment |
 | `ServiceNow check failed` | pooled availability / site lookup failure |
 | `Failed to grant IDP access for compute engine` | Valtix egress 403 |
@@ -2511,6 +2711,20 @@ flowchart TD
     QGB -->|Stuck| QGBS[QG PROVISIONING - limbo]
 ```
 
+> ⚠️ **The `PSTUCK` branch is contested — do not assume either behaviour.** Two parts of this
+> corpus disagree about whether a pooled CE with unregistered OMS still hangs. §5.6 #1–#2 and the
+> §9 defect register record it as **fixed**: GPSC-3811 (`6c920bf3`) escalates `FAILED`/`TIMEOUT`
+> to `FAILED_PROVISIONING`, and GPSC-3735 (`e0a0cb80`) removed the infra-PUT gate at
+> `poolingService.go:268-285`. But **lifecycle defect 16 is still open** and cites a *different*
+> gate — `clusterService.go:2375-2410` accepts only `"REGISTERED"`, and the cron OMS switch has
+> no `FAILED`/`TIMEOUT` case (`default: Debug("OMS in unknown state")`) — wedging the CE at
+> `CONFIGURING` until an operator clears it. These are not obviously the same gate, so treat
+> `PSTUCK` and its three `QGB*` children as **still reachable** until proven otherwise.
+> **Disambiguate from evidence, not from this tree:** a CE that moved to `FAILED_PROVISIONING`
+> took the fixed path; one sitting at `CONFIGURING`/Starting with `oms_status` = `FAILED` or
+> `TIMEOUT` is **lifecycle defect 16** (Part 6 — not registry #16, which is the Event 13912 PDE
+> reconcile). `[inferred]`
+
 **Order of investigation that consistently worked:**
 
 1. **Read the GCS DynamoDB row first** — `status`, `oms_status`, `qg_status`, `vp_status`,
@@ -2548,6 +2762,18 @@ tail -50 /var/log/password_rotation.log
 `salt-call --local state.sls state.idp` is **not read-only** — it rewrites live TDGSS config and
 the healthcheck marker. Use a maintenance window.
 
+**PERM space** is scarce on a CE — the design docs quote **~60 GB** for permanent tables
+without pinning the scope — and is allocated explicitly, flowing
+`DBC -> TD_GLOBAL -> global databases -> TD_PARENT -> local databases`:
+
+```sql
+CALL TD_GLOBAL.ChangeSpace('database_name', bytes, :msg);
+```
+
+Requires the Admin role (Data Curator while Admin is disabled). "Out of PERM space" on a CE is
+usually a user putting data where it does not belong — see the persistence contract in
+`CE-DATA-PLANE.md` §9. `[design-doc]`
+
 ### 8.5 Useful CLI recipes
 
 ```bash
@@ -2578,9 +2804,9 @@ CloudWatch retention on these groups is **7 days** in non-prod — capture evide
 
 ### 8.6 Bulk cleanup
 
-`script/log-extract/cleanup_ce_configs.sh` deletes every CE on a site except a `--keep`
-comma-separated list, given an env (dev/qa/preprod/prod) and a GCS JWT (from `creds.env` or an
-argument). Phase 0 lists configs, then cluster delete → poll → config delete. A common snag is
+Bulk site cleanup (delete every CE config on a site except a keep-list, driven by env +
+GCS JWT) is **ops tooling in the service workspace — not shipped in this skill**. The
+usual sequence is: list configs → cluster delete → poll → config delete. A common snag is
 `cluster delete HTTP 409 — skipping poll, will try config delete`, which is the
 `deletableStates` guard from §F11.2 (the cluster is still `TERMINATING`).
 **Caution:** bulk cleanup has been observed to leave the site's ServiceNow registration in a
@@ -2672,8 +2898,26 @@ state that strands the next CE (§7.6).
 | **GNS** | Global Network Service (`accp-network-service`) |
 | **LMO** | Lifecycle/Management Orchestrator — the async flow engine |
 | **SCOrch** | Component orchestration platform, reached via the site's Site Gateway |
-| **OMS** | Operations Management System — CE registration / Unity metadata + CDC |
-| **MCS** | The service OMS calls internally during registration |
+| **OMS** | CE registration / Unity metadata + CDC. **Expansion disputed:** this document has long said *Operations Management System*; the OMS design docs say **Object Metadata Service**, which matches the function. The OMS repo was never in the verified workspace (§10.3), so neither expansion is code-checked — see `CE-DATA-PLANE.md` §12 |
+| **MCS** | **Metadata Capture Service** — hooks the engine's RSG vproc on DDL, checks names across the VSG, forwards objects to OMS, and replays them onto a new CE. Co-located with OMS on one VM per site. The service OMS calls internally during registration `[design-doc]` |
+| **RSG** | **Relay Services Gateway** vproc — stock Teradata, one per node. Relays DDL off the node over TCP to an external metadata service (MCS uses this path) and provides the socket interface **DSA** uses. Design docs calling it "Resource Service Group" are wrong `[current]` |
+| **DSA** | **Data Stream Architecture** — Teradata's backup/archive/restore stack, reached via the RSG vproc. Design docs calling it "Dictionary Space Archive/Analyzer" are wrong. A dictionary restore from a DSA archive is one of the two described object-restore paths (`CE-DATA-PLANE.md` §12.5) `[current]` for the expansion |
+| **VSG** | Virtual System Group — the set of CEs across which object names must stay unique; MCS's conflict check runs against it `[design-doc]` |
+| **Collection** | The unit OMS stores objects in: a **CE (local)** collection is 1:1 with one CE config; the **Global** collection replicates to every CE in the site. `collection_id` in an MCS 400 names one of these |
+| **CW / PE / standard AMP** | Compute Worker (spool-only AMP, 2 vCPU + 16 GB) / Parsing Engine / the 4 BFS AMPs on the leader that hold the Data Dictionary |
+| **Leader / follower** | The one node with PEs + the 4 dictionary AMPs / the CW-only nodes autoscale adds and removes |
+| **`TD_SpoolMap` / `TD_MAP1`** | The all-CW-AMP map queries should run on / the 4-AMP leader map they fall back to. See `CE-DATA-PLANE.md` §2 |
+| **`TD_PARENT` / `TD_GLOBAL` / `TD_SERVER_DB` / `SYSLIB`** | Local users and databases / site-replicated global databases / DATALAKE (NOS-OTF) objects / procedures and UDFs |
+| **`TD_ACCESS` / `TD_CREATOR` / `TD_ADMIN`** | Database roles behind the Data User / Data Curator / Admin console roles |
+| **FirstConfig** | The TASM *subset* every CE ships with: everything at medium priority unless account strings say otherwise |
+| **VCE / VCL** | VantageCloud Enterprise (the always-on EDW product) / VantageCloud Lake. CE serves sites of both kinds |
+| **AIU** | Advanced Integrated Unit — the early codename for CE, and the initiative that unified the VCE and VCL compute architectures. Appears in older page titles |
+| **OTF / NOS** | Open Table Format (Iceberg, Delta, Hudi) / Native Object Store — querying object storage directly from SQL |
+| **QGM / QG Fabric / `tdqg-node` / connector** | QueryGrid's four parts: the per-site manager VM (config, REST API, monitoring) / the data-movement layer handling parallel transfer, heartbeats and resiliency / the per-node agent that boots waiting for its config secret / the pluggable per-system translator (Teradata, Hive, Spark, BigQuery, Oracle, generic JDBC, Arrow Flight SQL) |
+| **SCAgent** | The agent running **inside the customer's VCE site account** that provisions and manages CE VMs on SCOrch's behalf. The reason GCS never touches customer-account resources directly (§2.5) |
+| **Federated query** | One SQL statement spanning systems without moving data first — what QueryGrid provides, and CE's only route to EDW block storage |
+| **SCIM / OIDC / BYOIDP** | Group-membership sync / the only supported SSO protocol (SAML is not supported) / bring-your-own identity provider |
+| **ASG / VMSS / MIG** | The AWS / Azure / GCP scaling-group primitive backing the warm pool |
 | **CIDS** | Control-plane Identity Service — RBAC, role mappings, service principals |
 | **CSM** | Central Secrets Manager |
 | **STC** | The service notified UP/DOWN by `ce-postprovisioning` |
@@ -2705,11 +2949,11 @@ state that strands the next CE (§7.6).
 | `ce-assistant` | 5 | Sizing/cost advisory prototype |
 | `script`, `support`, `packer`, `image-bom`, `workspaces-event-scheduler` | 9 | Runbooks/wikis, provisioning-failure log analysis, image build, PR reviews |
 
-Raw extraction of these sessions (user prompts + assistant answers, tool noise stripped) was
-produced at `/tmp/ce-kb/extracted/` by `/tmp/ce-kb/extract.py`; re-run it to regenerate.
+Raw extraction of those sessions (prompts + answers, tool noise stripped) was a one-off
+authoring step; it is **not part of this skill** and is not required to use the KB.
 
 **Pass 2 — codebase verification.** Every structural claim was then re-checked against the
-checked-out repos (see [§0](#0-accuracy--code-drift) for the branch/commit stamp). That pass
+service repos (see [§0](#0-accuracy--code-drift) for the commit stamp). That pass
 found:
 
 | Category | Outcome |
@@ -2717,14 +2961,21 @@ found:
 | **Confirmed unchanged** | `MapPoolingStatus` table, `deletableStates`, `shouldUpdateState` / `isAzurePooledEngine` / `isAzureTelemetryStateRegression`, metering `cluster_health_problem_states` + `get_status` + fail-open leader election, `idp/init.sls` lines 1–4, `reconcileMetadataStateIfDiverged` Azure gate, GNS target-group/port table |
 | **Behaviour changed since the incidents** | The pooled OMS gate — rewritten by GPSC-3811 + GPSC-3735. Documented as §5.6 with both versions. |
 | **Whole subsystems that were missing** | Fleet health monitoring (F15), RCA (F16), gateway auto-remediation and the `RETRYING` state (F17), Global Database / DB-Admin API and `dbs_controls` (F18), warm-pool ML capacity forecasting and the pools API (F19), org/site sync from ServiceNow (F20), and the `ce-autoscaler` daemon's actual architecture (F9b) |
-| **Line-number drift** | Several `file.go:NNN` anchors no longer resolve on the current branches — hence the §0 warning to grep for symbols, not line numbers |
+| **Line-number drift** | Several `file.go:NNN` anchors no longer resolve on later trees — hence the §0 warning to grep for symbols, not line numbers |
 
 ### 10.3 Known limits of this document
 
 Being explicit about what is **not** covered, so nobody assumes silence means absence:
 
-- **SCOrch, OMS, MCS, QueryGrid, CIDS, SSO, Valtix, ServiceNow and Viewpoint internals.** Their
-  repos are not in this workspace; they are described only at the interface.
+- **SCOrch, CIDS, SSO, Valtix, ServiceNow and Viewpoint internals.** Their repos are not in
+  this workspace; they are described only at the interface. **OMS, MCS and QueryGrid are now
+  partially covered** — `CE-DATA-PLANE.md` documents the OMS/MCS capture-and-replay design and
+  F6 the QG runtime topology — but from design documents, not code, and their repos remain
+  unread.
+- **The customer-facing product framing.** This corpus is written from the control plane
+  outward and says almost nothing about Elastic Compute as a product: pricing, ordering,
+  console workflows, sizing guidance, or the AIU history that produced the current
+  architecture. A ticket phrased entirely in product language may not match this vocabulary.
 - **The Vantage Console / BFF.** The `COMPUTE_ENGINE_STATUS` enum that produced VAC-3723 lives
   there and was never read directly.
 - **Azure and GCP parity.** Azure is documented where sessions touched it (pooled, VMSS fleet
@@ -2743,11 +2994,16 @@ When you learn something new about CE, add it here in the right place:
 - a **new defect** → §9.1/§9.2
 - a **new endpoint/table/log group** → §8
 - a **behaviour change** → §5.6, and mark the affected incident **✅ Fixed**
+- anything about the **engine internals or database objects** (vprocs, maps, spool, OMS/MCS,
+  collections, roles, grants, what survives a stop) → `CE-DATA-PLANE.md`, not here — and if
+  you can verify one of its `[design-doc]` claims against code or a log, promote the marker
+  and say what you checked
 
 Keep the three rules that made this document useful:
 
 1. **Cite the code path or the log line**, never a README.
-2. **Mark every claim** `[as-deployed]`, `[current]` or `[inferred]`, and refresh the §0 stamp.
+2. **Mark every claim** `[as-deployed]`, `[current]`, `[design-doc]` or `[inferred]`, and
+   refresh the §0 stamp.
 3. **Label every arrow** in a diagram with the call and the reason — an unlabelled arrow is a
    box-and-line drawing, not documentation.
 

@@ -58,7 +58,7 @@ R3 code defect · R4 capacity · R5 config drift · R6 infra/network · R7 not-a
 | # | Signature (grep) | Symptom | Mechanism proven | Class | Confirm | Jira / fix |
 |---|---|---|---|---|---|---|
 | 15 | `queue: True`, `module.run` → `state.sls`, `orch/engine.sls`, highstate never returns | Dedicated CEs intermittently "Failed starting"; expansion hangs | **Nested Salt state execution with `queue: True` deadlocks the leader's salt-minion** — the outer state holds the queue the inner state waits on. Follower completes fine; leader hangs before Python module init | R1 | Leader minion log: `state.highstate` starts, never completes; follower identical run succeeds | REGULUS-3080, REGULUS-3549, REGULUS-3640 → AWS-VCE-CE-1.0.0.0.04/.05; interim workaround documented in Confluence |
-| 16a | `Event 13912`, `Event 13895`, `PDE is not operational - Cannot open PDE device`, `DOWN/HARDSTOP`, `retcode 61` | Expansion fails; DB down and never recovers | New follower can't reconcile with the leader → forced TPA restart → hard stop. In this confirmed case caused by **PMA-ID collision from a missing BYNET teardown on decommissioned nodes** | R1/R3 | Leader `messages` around the reconfigure; `tdinfo: can't find node_num N in vconfig GDO`; **prior decommission at that slot** — this is what distinguishes 16a from 16b | REGULUS-3207 / REGULUS-3208 / REGULUS-3211 → `avcd-vce-engine-configure` **PR #344**; also ce-log-triage **S2** |
+| 16a | `Event 13912`, `Event 13895`, `PDE is not operational - Cannot open PDE device`, `DOWN/HARDSTOP`, `retcode 61` | Expansion fails; DB down and never recovers | New follower can't reconcile with the leader → forced TPA restart → hard stop. In this confirmed case caused by **PMA-ID collision from a missing BYNET teardown on decommissioned nodes** | R1/R3 | Leader `messages` around the reconfigure; `tdinfo: can't find node_num N in vconfig GDO`; **prior decommission at that slot** — this is what distinguishes 16a from 16b | REGULUS-3207 / REGULUS-3208 / REGULUS-3211 → `avcd-vce-engine-configure` **PR #344**; also triage **S2** |
 | 16b | `Node needed for online reconfiguration failed reconcile` (**exactly 1×**), `pdemain: Cannot open GDO source directory /etc/opt/teradata/tdconfig/Backup (errno 2)`, `expected 1 node replies` | Autoscale **expand** kills the DB; `DOWN/HARDSTOP`, never recovers; the API keeps reporting RUNNING | The compiled `vconfig.gdo` was **already missing the new `node_num`** while `vconfig_addremove.txt` listed it — `tdinfo` returned `ok: False` **6 s before** `tpareconfig` ran and the orchestration proceeded anyway. PDE then forced a recovery TPA restart (correct behaviour), but the restart died on a **missing GDO backup directory**, converting a survivable reconfig failure into a permanent hard stop. The gate `wait_for_vconfig_gdo_sync` fingerprints the **addremove TXT only** and explicitly declines to inspect the compiled GDO, so it cannot detect this class of mismatch | R3 + R5 | `grep -c "failed reconcile"` and `grep -c "Cannot open GDO source directory"` → **1 each** (event, not echo); minion log at `tpareconfig − 6 s` for `tdinfo … 'ok': False`; node-reply counts (`expected 2` on healthy runs vs `expected 1` on the fatal one); `ls /etc/opt/teradata/tdconfig/Backup`; read `_runners/vconfig_sync.py` **implementation**, not its name | **COG-15659** (open). Blind-spot amplifier ⇒ **#61** |
 | 17 | `Timeout! PDE state is not running within 312 seconds`, `/etc/init.d/tpa start` | CE failed to start after scheduler start | **SLES 15 SP7 disk ordering is not static** — devices come up in a different order, TPA can't start | R5 | Salt log around `tpa start`; compare `/dev/` ordering with a good boot | REGULUS-2974 (known issue) |
 | 18 | `ALTER SPOOL MAP AMPCOUNT=`, `FAILED after 1200.0s`, `scale-down` | Autoscale scale-down does nothing | Phase 1 of the Salt decommission hangs on `ALTER SPOOL MAP` and is killed at 1200 s, so nothing is decommissioned | R1 | Decommission log: `alter_attempt=n/6`, `cw_online`, `nogt_total` | OTF-9516 |
@@ -152,7 +152,7 @@ Verify before blaming. Each of these has hijacked at least one investigation.
 - `parted ... unrecognised disk label` — benign first-boot disk prep.
 - ServiceNow `Org not found` — unrelated integration error (the real cause was a PrivateLink DNS timeout).
 - YaST writing unsupported `USERADD_CMD` / `USERDEL_*` into `/etc/login.defs` — cosmetic, present in **all** SLES 15 SP7 images, not CE-specific (OSEDEV-21030).
-- Metering `healthy`/`critical` flapping — publisher-side; **does not** mean the CE is down (ce-log-triage S4). Cross-check EC2/VM uptime before acting.
+- Metering `healthy`/`critical` flapping — publisher-side; **does not** mean the CE is down (triage **S4**). Cross-check EC2/VM uptime before acting.
 - `zombie dispatcher` entries in MCS — noted in IDR-259 as *probably not* the cause; logs had already wrapped.
 - `ERROR - Database was unreachable while updating password for TDaaS_*` (cron, every few minutes) — a *consequence* of the DB already being down, never the cause. Hijacked the first pass on COG-15659.
 - `tdinfo: Error, can't find node_num N … in vconfig GDO` repeating for hours **after** a hardstop — echo. The load-bearing occurrence is the **single** one *before* `tpareconfig` ran (#16b). Rule: causes change state, symptoms repeat — always `grep -c` before concluding.
@@ -171,6 +171,33 @@ Verify before blaming. Each of these has hijacked at least one investigation.
 | `ctl` / `dbscontrol` debug settings **differ between pooled and dedicated** CEs | COG-15055 (open) |
 | TDWM throttle applied to MCS management users (`TDaaS_tdbcmgmt1/2`) | REGULUS-3567 |
 | Test DB name reused between runs → "not restored" false positives | IDR-449 (raised explicitly in-thread) |
+
+---
+
+## Documented product limitations — R7, do not open an investigation
+
+These are **not** numbered signature rows: they were not recovered from a Jira thread with a
+proven mechanism, they come from the GA limitation list `[design-doc]`, and the numbered space
+stays reserved for confirmed root causes. They live here so that one grep during **S2 DEDUP**
+still catches them, because each produces a symptom indistinguishable from a D3 or D6 defect.
+Full explanation of the persistence rules behind them: `CE-DATA-PLANE.md` §9–§10.
+
+| Reported symptom | Documented behaviour (class R7) | Confirm | Jira |
+|---|---|---|---|
+| "Grants disappeared after the CE restarted" | Only `ACCESSRIGHTS` granted **to a ROLE at DATABASE level** are replayed by MCS. Grants to an individual user, or at object level, are not persisted | Re-read the original `GRANT`: was the grantee a user, or the scope an object? | IDR-285 |
+| "Objects never came back for this one database" | Database names containing a **dot** (e.g. email-format names) break OMS repopulation | Check the database name for `.` | IDR-199 |
+| "A UDF vanished across a stop/start" | UDFs compiled with the shared-library (`SL`) prefix are not persisted | Check how the UDF was compiled (JAR/SO with SL) | IDR-315 |
+| "Query failed seconds after the CE reached Running, then worked" | Objects are recreated **just-in-time** during start; a query can arrive before its object is replayed | Compare the query timestamp against the object's replay time | — |
+| "Service account cannot reach the GLOBAL database" | `clientID` service accounts cannot be granted authorization to GLOBAL databases | Confirm the principal is a clientID, not a user | — |
+| "The Admin role is missing from the console" | Admin is disabled; Data Curator carries Admin privileges in the interim | — | — |
+| "DBQL is empty for the incident window" | DBQL / RSS / EventLog are purged **every 6 h** and not persisted. File the observability gap; do not hunt the missing log | Check the window age against the last purge | — |
+| "Autoscale never fired" | Autoscale ships **disabled by default** pending database-level fixes. Not the same as absent — rows #16b, #36 and #61 are live autoscale failures | Confirm the setting for this CE before concluding either "broken" or "not shipped" | — |
+| "Viewpoint is not showing all our CEs" | Maximum **10** CEs monitored simultaneously | Count the CEs registered to that Viewpoint | — |
+| "QueryGrid cannot be enabled on this site" | QG requires the VCE system to use Global Identity (OIDC SSO); older VCE versions are not compatible | Check the VCE version and whether Global Identity is configured | — |
+
+> **Before quoting a row:** these are design-document claims, not verified behaviour, and
+> several were written against the GA cut. If one contradicts what a log shows, the log wins
+> and the row needs correcting.
 
 ---
 
@@ -200,3 +227,8 @@ Every row below is a real event from the Aug-2026 UAT batch. These are the failu
   both Jira keys (see IDR-301 → IDR-278) — recurrences are the strongest argument for
   a regression test.
 - Review quarterly: delete rows whose fix has shipped in every supported BOM.
+- **Leave *Documented product limitations* unnumbered.** That section is deliberately outside
+  the `#N` space: its rows are design-doc claims, not root causes proven from a Jira thread,
+  and numbering them would both dilute this file's evidence bar and consume identifiers.
+  If one of those limitations is ever confirmed as a defect with a proven mechanism, promote
+  it to a numbered row then — and delete the unnumbered entry so it does not exist twice.
