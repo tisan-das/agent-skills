@@ -19,6 +19,8 @@
 |---|---|
 | Understand the system in 5 minutes | [§1 Orientation](#1-orientation) + [§2.1 labelled call graph](#21-control-plane--labelled-call-graph) |
 | See what a customer's SQL actually traverses | [§2.2 Data plane](#22-data-plane--what-a-sql-client-actually-traverses) |
+| See which cloud **account** each piece sits in | [§2.5 Account & trust boundaries](#25-account--trust-boundaries) and [§8.1](#81-account--environment-map) |
+| Understand what runs *inside* the engine, or why database objects vanished | `CE-DATA-PLANE.md` |
 | Know who owns which piece of state | [§2.3](#23-who-owns-which-piece-of-state) then [§5](#5-state-models-the-vocabulary-problem) |
 | Trace one specific flow end-to-end | [§4 The flows](#4-the-flows) — F1…F20 |
 | Know which status means what, and who writes it | [§5 State models](#5-state-models-the-vocabulary-problem) |
@@ -34,6 +36,7 @@
 |---|---|
 | `CE-PROVISIONING-DEPROVISIONING.md` | Repo-by-repo provisioning/deprovisioning walkthrough, API matrix, CFN/Salt/Packer detail |
 | `CE-LIFECYCLE-AND-AUTOSCALE-ANALYSIS.md` | Exhaustive notification catalogue (H1–H29, A1–A13), the six state machines, autoscale internals, the "degraded" defect chain |
+| `CE-DATA-PLANE.md` | Engine internals (leader/follower vprocs, maps, spool-map versioning), OMS/MCS object capture & replay, collections, the database hierarchy, roles, the persistence contract, and the documented product limitations that mimic D3/D6 defects. **Design-doc sourced, not code-verified** — see its provenance banner. |
 | `diagrams-mermaid-code.md` | 8 architecture/sequence diagrams |
 
 Provisioning sequence detail and the failure decision tree also live in-package as
@@ -53,6 +56,7 @@ This document contains two kinds of statement, and mixing them up will mislead y
 | **[as-deployed]** | The behaviour observed **in the incident**, on the code that was running in that environment at that time (mostly June–July 2026 preprod). This is what the logs show. |
 | **[current]** | The behaviour in the **checked-out working tree** at the time of the last verification pass. |
 | **[inferred]** | Not proven — a hypothesis consistent with the evidence. |
+| **[design-doc]** | Stated in an internal design document — design *intent*, which the deployed system may never have matched or may since have diverged from. Ranks **below** `[current]` and `[as-deployed]`, **above** `[inferred]`. Used throughout `CE-DATA-PLANE.md`, which was not part of the code-verification pass. |
 
 **Why this matters:** several incidents in §7 have since been fixed, and the fix *changed the
 state machine*. If you read only the incident description you will debug the wrong system.
@@ -112,6 +116,16 @@ that runs inside a customer **VantageCloud Lake "site"**. Each CE is described b
 Every request enters through the **Global Compute Service (GCS)**, which reads the config
 and branches on `compute.type` (`router_helper.go:127`): `POOLED` → Pooling Service,
 anything else → SCOrch.
+
+**Two site deployment models**, which decides whether an EDW exists at all:
+
+| Model | What it is | Consequence |
+|---|---|---|
+| **CE in an existing VCE site** | The CE VPC is added alongside the customer's existing VantageCloud Enterprise EDW | The normal case. QueryGrid, the OMS/MCS VM and the QG copy-secret all assume an EDW primary is present |
+| **CE-only site (EDWless)** | A site provisioned with no always-on EDW — Elastic Compute only | Anything that reads from the EDW primary breaks by construction: the `…-tdqg-node` secret is never created, so QG copy-secret fails after ~300 s with `SecretNotFoundError` (F6) |
+
+So "EDWless" is a **supported ordering option**, not a broken site. Establish which model a
+site uses before treating an EDW-dependent failure as a defect. `[design-doc]`
 
 ### 1.2 Key identifiers (you will see all of these in logs)
 
@@ -381,6 +395,86 @@ flowchart LR
 
 ---
 
+### 2.5 Account & trust boundaries
+
+The diagrams above group by **function**; this one groups by **cloud account**, because
+several of the corpus's hardest failures are cross-account operations and no other diagram
+shows those seams. Account IDs for each box are in [§8.1](#81-account--environment-map).
+
+The headline: **pooled and dedicated CEs do not run in the same account.** Dedicated nodes
+land in the customer's own VCE site account, in a CE VPC built by GNS; pooled nodes are drawn
+from a warm pool in a Teradata-owned pool account and never enter the customer's account at
+all. §2.2's data-plane diagram shows the *dedicated* topology.
+
+```mermaid
+flowchart TB
+    subgraph TDADMIN["Teradata admin accounts - control plane"]
+        GCS["GCS"]
+        META["Metadata Service"]
+        GNS["GNS"]
+        LMO["LMO"]
+        POOLSVC["Pooling Service"]
+    end
+
+    subgraph POOLACCT["Teradata pool account - POOLED nodes"]
+        WARM["Warm ASG - VMSS - MIG"]
+        PCL["Pooled cluster<br/>per-cluster security group"]
+        PNLB["NLB + endpoint service"]
+    end
+
+    subgraph SITEACCT["Customer VCE site account"]
+        subgraph EDWVPC["VCE database VPC"]
+            EDW["EDW nodes"]
+            SCAG["SCAgent"]
+            OMSVM["OMS + MCS VM<br/>one per site"]
+            QGM["QueryGrid Manager"]
+        end
+        subgraph CEVPC["CE VPC - built by GNS"]
+            DCL["Dedicated cluster"]
+            DNLB["NLB + endpoint service"]
+            NAT["NAT gateway"]
+        end
+    end
+
+    subgraph CUSTACCT["Customer's own account"]
+        EP["VPC interface endpoint"]
+        CLIENT["SQL clients - BI - ETL"]
+    end
+
+    GCS -->|"POST components via Site Gateway<br/>reason: only SCAgent may build in the customer account"| SCAG
+    SCAG --> DCL
+    GCS -->|"POST /v1/clusters<br/>reason: pooled nodes come from the warm pool"| POOLSVC
+    POOLSVC --> WARM --> PCL
+    GNS -->|"VPC - subnets - NLB - endpoint service<br/>reason: network must exist before the CE starts"| CEVPC
+    LMO -->|"AssumeRole source then target - copy tdqg-node secret<br/>reason: the pool account cannot read the site's secret"| POOLACCT
+    OMSVM -->|"secret source<br/>reason: QG config is minted beside the EDW"| LMO
+    CLIENT --> EP
+    EP -->|"PrivateLink tcp 1025 - stays on the cloud backbone<br/>reason: no public path to a CE node"| DNLB
+    EP -->|"PrivateLink tcp 1025<br/>reason: pooled CEs are reached the same way"| PNLB
+    DNLB --> DCL
+    PNLB --> PCL
+    DCL -->|"egress only - object store, IdP JWKS, SNS metering<br/>reason: no inbound path exists"| NAT
+```
+
+**Why this matters in practice:**
+
+- The QG **copy-secret** flow (F6) is a cross-account `AssumeRole(source)` →
+  `AssumeRole(target)` between exactly two of these boxes — site account to pool account.
+  `<POOLING_PREPROD_ACCT>` in §8.1 is the target; `<SITE_ACCT>` is the source.
+- LMO can only act inside a site account because IAM roles were pushed there by StackSets.
+  A missing or drifted role surfaces as a cross-account permission error, not a CE fault.
+- Pooled multi-tenancy is bounded by the **per-cluster security group**: pool VMs are shared
+  *before* assignment, but once a cluster forms, those VMs are exclusive to one customer for
+  the life of the cluster, and no other tenant's cluster can reach them.
+- Nodes in a cluster are always in **one AZ** (BYNET latency); the pool spans AZs so it can
+  place into whichever has capacity.
+
+`[design-doc]` for the pool-account placement and the StackSet role mechanism — the corpus
+verified neither, though §8.1's separate pool account and F5's warm-ASG claim are consistent
+with it. Confirm before citing in an RCA.
+
+---
+
 ## 3. Environments
 
 | Env | GCS | Metadata Service | Pooling service (region-templated) |
@@ -644,7 +738,8 @@ sequenceDiagram
     end
     API->>API: configMap = metadata config minus schedule, site_id, csp_details<br/>plus key_name, debug, experimental, dev (dev env only)
     API->>SC: POST /scorch/v2/components<br/>{name, manifest_name ce, manifest_version,<br/>platform, desired_status RUNNING, configuration}
-    Note over API,SC: the environment appears ONLY in the gateway host name<br/>https://{site_id}.gateway.{env}.cloud.CORP_DOMAIN
+    Note over API,SC: the environment appears ONLY in the gateway host name
+    Note over API,SC: https://{site_id}.gateway.{env}.cloud.CORP_DOMAIN
     API->>MD: PATCH state = PROVISIONING
     SC->>CTR: launch lifecycle container COMPONENT_JOB_TYPE=CREATE<br/>SCOrch injects ENVIRONMENT_NAME
     CTR->>CFN: deploy per-CE stack - 7 phases
@@ -729,7 +824,7 @@ sequenceDiagram
     alt oms_status FAILED or TIMEOUT   [current]
         API->>API: mappedStatus := FAILED_PROVISIONING
         API->>MD: PATCH state = FAILED_PROVISIONING
-        Note over API: status-monitor then deprovisions<br/>and triggers OMS deregistration
+        Note over API: status-monitor then deprovisions and triggers OMS deregistration
     else RUNNING
         API->>MD: PUT /infrastructure {status RUNNING, instances}
         Note over API,MD: no OMS gate any more - 409 from metadata means success
@@ -858,7 +953,9 @@ then copies it cross-account into the CE-Secrets/pooled account. The source acco
 `OmsCEAdminJobFailedError` means LMO reached OMS fine and **OMS's own job failed** — commonly
 `"MCS API returned 400"`, i.e. OMS→MCS rejected the registration (duplicate registration,
 bad `address`/`collection_id`/`engine_id`, or the site not in a valid MCS state). The real
-detail is in the **OMS CE-Admin logs for that job id**, not in LMO.
+detail is in the **OMS CE-Admin logs for that job id**, not in LMO. For what a *collection*
+is — and why "duplicate registration" is the MCS name-conflict check firing across the
+Virtual System Group — see `CE-DATA-PLANE.md` §5–§6.
 
 > **Who actually calls `POST /oms/ce-admin/v1/compute-engines`.** The answer differs by CE
 > type, and on the live path it is **not GCS** in either case — route accordingly:
@@ -875,6 +972,42 @@ detail is in the **OMS CE-Admin logs for that job id**, not in LMO.
 > one with PrivateLink skipped, is *supposed* to have no OMS registration — absence there is
 > correct behaviour, not a fault. This is separate from provisioning the **site-level** OMS
 > component via LMO's `oms-create` workflows. `[current]`
+
+**QueryGrid runtime topology — two paths, and only one of them is private.** The sequence
+above provisions QG; this is where the pieces then sit. QGM is a separate VM in the **VCE
+database VPC** (one per site, shared with any pre-existing QueryGrid deployment), while
+`tdqg-node` runs on every CE node and **boots waiting for its config file** — which is what
+the `{SITE_ID}-{config_id}-tdqg-node` secret above delivers. A copy-secret that never lands
+leaves those nodes waiting indefinitely rather than failing loudly. `[design-doc]`
+
+```mermaid
+flowchart LR
+    subgraph EDWVPC["VCE database VPC"]
+        QGM["QueryGrid Manager<br/>REST API - config store - monitoring"]
+        EDWN["EDW nodes<br/>tdqg-node on each"]
+    end
+
+    subgraph CEVPC["CE nodes"]
+        LEAD["leader<br/>tdqg-node"]
+        FOLL["followers<br/>tdqg-node"]
+    end
+
+    SGW["Site Gateway"]
+
+    LEAD -->|"register + fetch config over the public internet<br/>reason: CE NAT IP must be whitelisted on the gateway"| SGW
+    FOLL --> SGW
+    SGW -->|"control path only<br/>reason: QGM owns systems, links and connectors"| QGM
+    EDWN <-->|"data path - PrivateLink tcp 5100 - target group qgtg<br/>reason: query results must never traverse the internet"| LEAD
+
+    classDef warn fill:#ffebee,stroke:#c62828,color:#000
+    class SGW warn
+```
+
+The **control** path (registration, configuration) leaves the CE over the public internet via
+the Site Gateway; the **data** path (actual result transfer) is PrivateLink on **tcp 5100** —
+the `qgtg` target group in §2.2, the only one registered by *instance ID* rather than IP
+(§7.8). A rehydrate re-enables the existing QGM objects rather than recreating them;
+termination disables or deletes the CE's registration before the nodes go away.
 
 **Viewpoint** is registered by the Salt role `td_unlimited_viewpoint` **on the VM**, not by the
 provisioning container; the container only resolves credentials, passes them into the
@@ -917,7 +1050,8 @@ sequenceDiagram
     EVP->>MD: raw DynamoDB UpdateItem - no API - no state machine
     end
 
-    Note over API,MD: if the PATCH fails GCS logs<br/>dynamoDB update successful but metadata service update failed<br/>and the two stores silently drift
+    Note over API,MD: on PATCH failure GCS logs dynamoDB update successful
+    Note over API,MD: but metadata service update failed - the two stores drift silently
 ```
 
 ```
@@ -1063,6 +1197,13 @@ plus Salt orchestrations. **None of its state machine is visible to the cloud co
 | `state/autoscale/vconfig_expand.sls` | **Phase 2 (ordered):** set `max_cluster_index`, apply `vconfig` → `clique` → `vconfig.filter`, set `vconfig_complete`, fire `cluster/node/vconfig_complete` |
 | `orch/integrate_node_cluster.sls` | **Phase 3 (batched, on the leader):** start PDE → start DBS → `tpareconfig` → `ALTER SPOOL MAP … AMPCOUNT` → `cluster:state = IDLE` |
 | `orch/decommission_node_cluster.sls` | Contraction: drain, `DROP SPOOL MAP`, wait for vprocs GONE, remove scale-in protection |
+
+> **What `ALTER SPOOL MAP` / `DROP SPOOL MAP` are actually doing.** An expand builds a
+> *second, wider* spool map (`TD_SpoolMap2`) covering the old plus new CW AMPs; queries
+> already running stay on the original map until they finish, and only then is it dropped.
+> That drain is what `QUERY_DRAIN_TIMED_OUT` below reports, and the window between building
+> the new map and retiring the old one is where **registry #36** (REGULUS-3580) crashes. Full
+> mechanism in `CE-DATA-PLANE.md` §2.
 
 **Salt reactor bus** (`engine_reactor.conf`) — how it is all wired:
 
@@ -1399,11 +1540,12 @@ sequenceDiagram
     MD->>MD: DDB GetItem - compute, cluster, csp_details, dns_name
     MD->>SSO: GetIdpConnections(WithSiteAccess(site_id))
     SSO-->>MD: issuer, client_id, username_claim, audience
-    Note over MD: OVERWRITES the DDB idp_settings snapshot.<br/>404 here is only a WARN and yields no idp_settings at all
+    Note over MD: OVERWRITES the DDB idp_settings snapshot
+    Note over MD: 404 here is only a WARN and yields no idp_settings at all
     MD->>CIDS: GET /resources/{ceCfgId} - roles_map
     MD->>CIDS: GET /rbac-roles?erp= - derive td_role from privileges
     MD->>SCIM: ResolveGroupUsers(site_id, idp_groups)
-    Note over MD: any unmatched role or group is log.Warn + continue<br/>the mapping is silently dropped
+    Note over MD: any unmatched role or group is log.Warn + continue - mapping silently dropped
     MD-->>GCS: data.idp_settings + data.user_role_mappings
 
     alt DEDICATED
@@ -1411,7 +1553,8 @@ sequenceDiagram
     else POOLED
         GCS->>PROV: payload global_configuration.idp_settings / .user_role_mappings
     end
-    Note over GCS,PROV: GCS relays verbatim - no transformation, no validation.<br/>The only difference is nesting depth
+    Note over GCS,PROV: GCS relays verbatim - no transformation, no validation
+    Note over GCS,PROV: the only difference is nesting depth
 
     PROV->>SALT: grains idp.settings[_encoded] + idp.user_role_mappings
     SALT->>TDGSS: tdgsseasyconfig update - JWTDynamicKey yes, IdentityProvider.Url = issuer
@@ -1625,9 +1768,10 @@ sequenceDiagram
     participant UI as Health Monitor UI
 
     HM->>HM: a service is degraded, or a config is in an RCA failure state
-    Note over HM: RCAFailureStates = FAILED_PROVISIONING - FAILED_TERMINATING<br/>FAILED_PRIVATELINK_DELETE - FAILED_CLUSTER_DELETE
+    Note over HM: RCAFailureStates = FAILED_PROVISIONING - FAILED_TERMINATING
+    Note over HM: FAILED_PRIVATELINK_DELETE - FAILED_CLUSTER_DELETE
     HM->>RCA: TriggerRCA(lookupKey, site_id, affected_service)
-    Note over RCA: idempotent - returns the existing record<br/>unless it is stale (older than 1 hour)
+    Note over RCA: idempotent - returns the existing record unless stale (older than 1 hour)
     RCA->>DIAG: submit investigation
     DIAG-->>RCA: investigation_id, status=running
     RCA->>RCA: PutItem {config_id, status=running, ttl}
@@ -2582,6 +2726,17 @@ tail -50 /var/log/password_rotation.log
 `salt-call --local state.sls state.idp` is **not read-only** — it rewrites live TDGSS config and
 the healthcheck marker. Use a maintenance window.
 
+**PERM space** is scarce on a CE — roughly **60 GB** for the whole engine — and is allocated
+explicitly, flowing `DBC -> TD_GLOBAL -> global databases -> TD_PARENT -> local databases`:
+
+```sql
+CALL TD_GLOBAL.ChangeSpace('database_name', bytes, :msg);
+```
+
+Requires the Admin role (Data Curator while Admin is disabled). "Out of PERM space" on a CE is
+usually a user putting data where it does not belong — see the persistence contract in
+`CE-DATA-PLANE.md` §9. `[design-doc]`
+
 ### 8.5 Useful CLI recipes
 
 ```bash
@@ -2706,8 +2861,23 @@ state that strands the next CE (§7.6).
 | **GNS** | Global Network Service (`accp-network-service`) |
 | **LMO** | Lifecycle/Management Orchestrator — the async flow engine |
 | **SCOrch** | Component orchestration platform, reached via the site's Site Gateway |
-| **OMS** | Operations Management System — CE registration / Unity metadata + CDC |
-| **MCS** | The service OMS calls internally during registration |
+| **OMS** | CE registration / Unity metadata + CDC. **Expansion disputed:** this document has long said *Operations Management System*; the OMS design docs say **Object Metadata Service**, which matches the function. The OMS repo was never in the verified workspace (§10.3), so neither expansion is code-checked — see `CE-DATA-PLANE.md` §12 |
+| **MCS** | **Metadata Capture Service** — hooks the engine's RSG vproc on DDL, checks names across the VSG, forwards objects to OMS, and replays them onto a new CE. Co-located with OMS on one VM per site. The service OMS calls internally during registration `[design-doc]` |
+| **RSG** | Resource Service Group vproc — the database-level hook that fires when DDL executes; MCS's capture point `[design-doc]` |
+| **VSG** | Virtual System Group — the set of CEs across which object names must stay unique; MCS's conflict check runs against it `[design-doc]` |
+| **Collection** | The unit OMS stores objects in: a **CE (local)** collection is 1:1 with one CE config; the **Global** collection replicates to every CE in the site. `collection_id` in an MCS 400 names one of these |
+| **CW / PE / standard AMP** | Compute Worker (spool-only AMP, 2 vCPU + 16 GB) / Parsing Engine / the 4 BFS AMPs on the leader that hold the Data Dictionary |
+| **Leader / follower** | The one node with PEs + the 4 dictionary AMPs / the CW-only nodes autoscale adds and removes |
+| **`TD_SpoolMap` / `TD_MAP1`** | The all-CW-AMP map queries should run on / the 4-AMP leader map they fall back to. See `CE-DATA-PLANE.md` §2 |
+| **`TD_PARENT` / `TD_GLOBAL` / `TD_SERVER_DB` / `SYSLIB`** | Local users and databases / site-replicated global databases / DATALAKE (NOS-OTF) objects / procedures and UDFs |
+| **`TD_ACCESS` / `TD_CREATOR` / `TD_ADMIN`** | Database roles behind the Data User / Data Curator / Admin console roles |
+| **FirstConfig** | The TASM *subset* every CE ships with: everything at medium priority unless account strings say otherwise |
+| **VCE / VCL** | VantageCloud Enterprise (the always-on EDW product) / VantageCloud Lake. CE serves sites of both kinds |
+| **AIU** | Advanced Integrated Unit — the early codename for CE, and the initiative that unified the VCE and VCL compute architectures. Appears in older page titles |
+| **OTF / NOS** | Open Table Format (Iceberg, Delta, Hudi) / Native Object Store — querying object storage directly from SQL |
+| **QGM / `tdqg-node`** | QueryGrid Manager, one VM per site in the VCE database VPC / the per-node QG agent that boots waiting for its config secret |
+| **SCIM / OIDC / BYOIDP** | Group-membership sync / the only supported SSO protocol (SAML is not supported) / bring-your-own identity provider |
+| **ASG / VMSS / MIG** | The AWS / Azure / GCP scaling-group primitive backing the warm pool |
 | **CIDS** | Control-plane Identity Service — RBAC, role mappings, service principals |
 | **CSM** | Central Secrets Manager |
 | **STC** | The service notified UP/DOWN by `ce-postprovisioning` |
@@ -2757,8 +2927,15 @@ found:
 
 Being explicit about what is **not** covered, so nobody assumes silence means absence:
 
-- **SCOrch, OMS, MCS, QueryGrid, CIDS, SSO, Valtix, ServiceNow and Viewpoint internals.** Their
-  repos are not in this workspace; they are described only at the interface.
+- **SCOrch, CIDS, SSO, Valtix, ServiceNow and Viewpoint internals.** Their repos are not in
+  this workspace; they are described only at the interface. **OMS, MCS and QueryGrid are now
+  partially covered** — `CE-DATA-PLANE.md` documents the OMS/MCS capture-and-replay design and
+  F6 the QG runtime topology — but from design documents, not code, and their repos remain
+  unread.
+- **The customer-facing product framing.** This corpus is written from the control plane
+  outward and says almost nothing about Elastic Compute as a product: pricing, ordering,
+  console workflows, sizing guidance, or the AIU history that produced the current
+  architecture. A ticket phrased entirely in product language may not match this vocabulary.
 - **The Vantage Console / BFF.** The `COMPUTE_ENGINE_STATUS` enum that produced VAC-3723 lives
   there and was never read directly.
 - **Azure and GCP parity.** Azure is documented where sessions touched it (pooled, VMSS fleet

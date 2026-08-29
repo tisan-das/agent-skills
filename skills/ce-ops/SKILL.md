@@ -12,7 +12,7 @@ service repos. Nothing here comes from READMEs (repeatedly proven stale — evid
 
 | Capability | Module | Job |
 |---|---|---|
-| **KNOW** | `references/` — six corpus documents (map below) | Architecture, flows, state semantics, APIs, runbook, known defects |
+| **KNOW** | `references/` — seven corpus documents (map below) | Architecture, flows, state semantics, APIs, runbook, engine internals, known defects |
 | **TRIAGE** | `triage/TRIAGE.md` + `scripts/` | Root-cause a stuck/failed CE from CloudWatch JSON exports, `messages` syslog, Salt `minion` logs |
 | **WRITE** | `rca/RCA-WRITEUP.md` + `rca/example-*.md` | Turn a concluded investigation into the RCA comment or a shareable document, plus verification contract and registry row |
 
@@ -50,7 +50,7 @@ establish **which store** says X. Divergence between stores is itself a finding.
 
 ## The knowledge corpus (`references/`)
 
-The six documents cross-reference each other **by these exact filenames** — do not
+The seven documents cross-reference each other **by these exact filenames** — do not
 rename them. Commands quoted *inside* them use bare sibling filenames
 (`grep -in "9710" CE-SIGNATURE-REGISTRY.md`); prefix `references/` when you run them.
 The files are large; **grep for anchors, IDs, and error strings rather than reading
@@ -63,6 +63,7 @@ whole files** (`grep -n "^## \|^### " <file>` gives a live table of contents).
 | `CE-SIGNATURE-REGISTRY.md` | **The lookup table.** 60+ grep-able failure signatures with proven mechanisms, confirm steps and Jira keys; secondary-noise list; environment gotchas; verdict hazards | Pipeline step S2 (dedup) and whenever an error code / log phrase appears |
 | `CE-PROVISIONING-DEPROVISIONING.md` | **Provisioning deep dive.** Repo-by-repo walkthrough, auth model, full inter-service API matrix, deploy container + CloudFormation phases, image build pipeline, data stores, per-repo quick reference | How provisioning/teardown is implemented, which API calls what, CFN/Salt/Packer detail |
 | `CE-LIFECYCLE-AND-AUTOSCALE-ANALYSIS.md` | **Lifecycle deep dive.** Complete notification/event catalogue (verbatim payloads), the six state machines, START/STOP walkthroughs, autoscaler internals, the autoscale "degraded→STOPPED" root cause with `file:line` evidence, lifecycle defects 1–27, who-writes-which-field (Appendix A), vocabulary mismatch matrix (Appendix B) | Events/notifications, state-machine transitions, autoscale, status-divergence bugs |
+| `CE-DATA-PLANE.md` | **Inside the engine.** Leader/follower vprocs, the map system and why autoscale versions the spool map, the NLB's non-role, the FirstConfig ruleset, OMS/MCS object capture & replay, collections (what `collection_id` names), the database hierarchy, the three roles, the persistence contract, and the documented limitations that mimic D3/D6 defects | Objects or grants missing after a stop/start, "the CE is slow", spool-map/drain questions, role and grant scope, anything in SOP domains D3–D6. **Design-doc sourced, not code-verified** |
 | `diagrams-mermaid-code.md` | **Legacy diagram pack.** 8 importable Mermaid diagrams: full architecture, SCOrch + pooled provisioning sequences, network/PrivateLink, auto-suspend, LMO workflows, image build pipeline, data-store/queue map | When a renderable diagram or sequence view is wanted — **but it predates the verification pass**: Provisioning §16 lists **16 verified corrections against this file** (e.g. pooling is ECS Fargate/Litestar/ALB with Ping-JWT, not the Lambda+SQS+IAM shown in Diagram 1). Cross-check every arrow against Provisioning §16; labels contain em-dashes, which break the KB §9.4 pure-ASCII render rule — sanitise before `mmdc` |
 
 Routing by question:
@@ -82,6 +83,9 @@ Routing by question:
 | Show me a diagram of X / render the architecture | KB §2 diagrams (verified) and §8.3 triage tree first; `diagrams-mermaid-code.md` for sequence/pipeline views — apply Provisioning §16 corrections before citing |
 | Recommended fixes — code-level and systemic | Lifecycle Part 7 + SOP §14 programme-level fixes |
 | Investigation concluded — write it up / close the ticket | `rca/RCA-WRITEUP.md` (Jira comment + shareable-document templates, house style, verification contract, closure rules, registry row); `rca/example-*.md` for two full worked writeups |
+| Objects, grants, views or UDFs missing after a stop/start | `CE-DATA-PLANE.md` §9 persistence contract, then §10 limitations — **before** collecting D3 evidence |
+| What runs inside the engine; why a query is slow; what a spool map is | `CE-DATA-PLANE.md` §1–§4 |
+| Which cloud account is a thing in / cross-account failures | KB §2.5 boundaries diagram + §8.1 account map |
 | Acronym I don't recognise | KB §10.1 glossary |
 
 ### ID namespaces — cite unambiguously
@@ -174,8 +178,15 @@ These rules come from the documents themselves and from real investigation failu
 (registry "Verdict hazards"). Apply them to your own answers:
 
 - **Carry the markers.** Claims are tagged `[as-deployed]` (what the incident logs
-  showed), `[current]` (verified in the working tree, stamped in KB §0), or
+  showed), `[current]` (verified in the working tree, stamped in KB §0), `[design-doc]`
+  (stated in an internal design document — intent, not observed behaviour), or
   `[inferred]` (hypothesis). Preserve the distinction when answering.
+- **`CE-DATA-PLANE.md` is the one document that was never code-verified.** It is derived
+  from internal design docs, so everything in it is `[design-doc]` unless marked otherwise:
+  above `[inferred]`, below `[current]` and `[as-deployed]`. It fills real gaps — the SOP's
+  own D3 note calls that domain "least documented" — but when it disagrees with a log or a
+  code path, the log or code path wins. Its §12 lists the known conflicts (the OMS and LMO
+  acronym expansions among them); do not resolve those silently in an RCA.
 - **When the documents disagree, precedence follows verification recency:** KB §0 stamp +
   **KB §5.6 behaviour changes** override the deep docs, whose `[current]` claims override
   their own `[as-deployed]` incident narratives (Provisioning §16 likewise corrects the

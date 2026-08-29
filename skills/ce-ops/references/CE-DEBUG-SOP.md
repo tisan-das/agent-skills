@@ -113,6 +113,9 @@ labels = CE AND text ~ "<site id>" AND created > -30d
 Outcomes:
 - **Registry hit** → apply the confirm step in that row. If it matches, comment your
   evidence on the master Jira and **increment the recurrence count**. Do not open a new ticket.
+- **Hit in *Documented product limitations* (R7)** → the behaviour is by design. Answer the
+  reporter, close as not-a-defect, and open nothing. Objects or grants missing after a
+  stop/start are the most common instance — check that section before any D3 or D6 dig.
 - **Open Jira with the same signature** → link `duplicates`, add evidence, stop.
 - **Same signature, different subsystem** → new ticket, link `relates to`, state *how* it differs.
 - **Nothing** → continue.
@@ -189,6 +192,11 @@ Anchors: `HARDSTOP` · `Event 13912` · `Event 13895` · `tpareconfig` · `tosst
 `expand vconfig` · `retcode 61` · `NEWPROC NoGT` · `queue: True`.
 
 **D3 — MCS / BCM** *(largest open cluster, least documented)*
+0. **First**: is the object *supposed* to have survived? `CE-DATA-PLANE.md` §9 (persistence
+   contract) and §10 (documented limitations) settle a large share of these without evidence
+   collection — user-scope grants, object-scope grants, `SL`-compiled UDFs and dotted database
+   names are all documented non-survivors. §5–§6 explain the capture path and what
+   `collection_id` names.
 1. MCS system state dump — `System ID / State / Pending State`. `Disconnected` + `Pending: Active`
    means the CE never re-registered (registry #22a).
 2. MCS streams: `MCSObjectLookup` → `processMCSObjectLookupRequest` → `replayItemWithDeps`,
@@ -198,7 +206,10 @@ Anchors: `HARDSTOP` · `Event 13912` · `Event 13895` · `tpareconfig` · `tosst
    an observability gap ticket).
 5. Catalog JSON integrity; `@@___DDL___@@` (catalog item 0) state; `establishTargetSystems` bitmask.
 
-**D4 — DBS** → streams log → dump/backtrace (`gdb`) → DBQL → `ctl`/`xctl`/`dbscontrol` diff
+**D4 — DBS** — background for map selection, spool-map versioning during autoscale and the
+FirstConfig ruleset is in `CE-DATA-PLANE.md` §2 and §4; a "slow CE" is often a staging table
+on `TD_MAP1` (4 AMPs) instead of a `VOLATILE` table on `TD_SpoolMap`.
+→ streams log → dump/backtrace (`gdb`) → DBQL → `ctl`/`xctl`/`dbscontrol` diff
 **pooled vs dedicated** (they legitimately differ — COG-15055) → TDWM/TASM rulesets → ResUsage.
 Always capture the failing SQL with its query-band tag, session id, AMP/vproc, and whether a
 dump was collected.
@@ -206,7 +217,9 @@ dump was collected.
 **D5 — OTF / NOS** → the full `Caused by:` chain, catalog type (Glue/Unity/Polaris), object-store
 status code, NOS-connector logs with FAF logging enabled, and **retry/backoff behaviour**.
 
-**D6 — Auth** → CIDS token `exp` vs request time, token-exchange call to OMS, TDGSS logs,
+**D6 — Auth** — the role vocabulary (`TD_ACCESS`/`TD_CREATOR`/`TD_ADMIN`, Data User/Curator/
+Admin) and what a grant must look like to survive a restart are in `CE-DATA-PLANE.md` §8–§9.
+→ CIDS token `exp` vs request time, token-exchange call to OMS, TDGSS logs,
 `logmech=JWT` + `logdata`, grants present in `dbc` vs expected, and per-CE password rotation
 after restart.
 

@@ -174,6 +174,33 @@ Verify before blaming. Each of these has hijacked at least one investigation.
 
 ---
 
+## Documented product limitations — R7, do not open an investigation
+
+These are **not** numbered signature rows: they were not recovered from a Jira thread with a
+proven mechanism, they come from the GA limitation list `[design-doc]`, and the numbered space
+stays reserved for confirmed root causes. They live here so that one grep during **S2 DEDUP**
+still catches them, because each produces a symptom indistinguishable from a D3 or D6 defect.
+Full explanation of the persistence rules behind them: `CE-DATA-PLANE.md` §9–§10.
+
+| Reported symptom | Documented behaviour (class R7) | Confirm | Jira |
+|---|---|---|---|
+| "Grants disappeared after the CE restarted" | Only `ACCESSRIGHTS` granted **to a ROLE at DATABASE level** are replayed by MCS. Grants to an individual user, or at object level, are not persisted | Re-read the original `GRANT`: was the grantee a user, or the scope an object? | IDR-285 |
+| "Objects never came back for this one database" | Database names containing a **dot** (e.g. email-format names) break OMS repopulation | Check the database name for `.` | IDR-199 |
+| "A UDF vanished across a stop/start" | UDFs compiled with the shared-library (`SL`) prefix are not persisted | Check how the UDF was compiled (JAR/SO with SL) | IDR-315 |
+| "Query failed seconds after the CE reached Running, then worked" | Objects are recreated **just-in-time** during start; a query can arrive before its object is replayed | Compare the query timestamp against the object's replay time | — |
+| "Service account cannot reach the GLOBAL database" | `clientID` service accounts cannot be granted authorization to GLOBAL databases | Confirm the principal is a clientID, not a user | — |
+| "The Admin role is missing from the console" | Admin is disabled; Data Curator carries Admin privileges in the interim | — | — |
+| "DBQL is empty for the incident window" | DBQL / RSS / EventLog are purged **every 6 h** and not persisted. File the observability gap; do not hunt the missing log | Check the window age against the last purge | — |
+| "Autoscale never fired" | Autoscale shipped **disabled** pending database-level fixes | Confirm it is enabled for this CE before treating silence as a defect | — |
+| "Viewpoint is not showing all our CEs" | Maximum **10** CEs monitored simultaneously | Count the CEs registered to that Viewpoint | — |
+| "QueryGrid cannot be enabled on this site" | QG requires the VCE system to use Global Identity (OIDC SSO); older VCE versions are not compatible | Check the VCE version and whether Global Identity is configured | — |
+
+> **Before quoting a row:** these are design-document claims, not verified behaviour, and
+> several were written against the GA cut. If one contradicts what a log shows, the log wins
+> and the row needs correcting.
+
+---
+
 ## Verdict hazards — how a wrong root cause gets into this file
 
 Every row below is a real event from the Aug-2026 UAT batch. These are the failure modes of the
