@@ -16,9 +16,10 @@ or why autoscale has to version one ([§2](#2-maps--and-why-autoscale-versions-t
 > ## Provenance — read before citing anything here
 >
 > Every other document in `references/` was verified against the service repos. **This one
-> was not.** It is derived from internal design documentation (Confluence/SharePoint pages
-> for AIU, GCS, the pooling service, and the CMS/OMS "Database Objects" and OMS API specs),
-> not from code or logs.
+> was not.** It is derived from internal design documentation, not from code or logs. The
+> exact pages are listed in [§13](#13-sources) — the corpus rule is "cite the code path or
+> the log line", and where no code path exists, naming the source document is the closest
+> honest equivalent. It also makes every claim here falsifiable.
 >
 > It therefore introduces a fourth marker alongside the three in
 > [`CE-KNOWLEDGE-BASE.md` §0](CE-KNOWLEDGE-BASE.md#0-accuracy--code-drift):
@@ -373,8 +374,45 @@ Resolve these against code or a current design owner before quoting either side 
    product of that name is Data Stream Architecture. Do not cite the expansion until checked.
 4. **Node counts.** "2 PEs and 4 standard AMPs on the leader" is a design-document constant.
    It has not been confirmed against a running CE at every size, and sizes run 1x to 32x.
+5. **Two restore mechanisms are described, and never reconciled.** §5 above documents the
+   OMS/MCS path: MCS replays captured DDL onto the new engine. The CMS design page instead
+   gives a four-step provisioning order in which step 3 is a **dictionary restore from a DSA
+   archive** and step 4 is DDL replay for users and authorization objects — with views,
+   macros and UDFs attributed to the DSA archive rather than to OMS. Both cannot be the whole
+   story, and the split matters directly to D3 triage: "my view did not come back" is a
+   different investigation depending on whether views travel by archive or by replayed DDL.
+   **Establish which mechanism actually runs before concluding anything about missing
+   objects.**
 
 **Not covered here:** SCOrch, CIDS, Valtix, ServiceNow and Viewpoint internals (see
 `CE-KNOWLEDGE-BASE.md` §10.3); the QueryGrid *provisioning* sequence (see
 `CE-PROVISIONING-DEPROVISIONING.md` §10.1) and its runtime topology (see
 `CE-KNOWLEDGE-BASE.md` F6).
+
+---
+
+## 13. Sources
+
+The design documents this file was built from. Confluence pages are in the **CLDI** space;
+cite them by ID, since titles get renamed. Verify against these before trusting anything
+marked `[design-doc]`, and prefer the code if you have it.
+
+| Page ID | Document | Supplied |
+|---|---|---|
+| 759893960 | CE Metadata Service — Database Objects (CMS/OMS deep dive) | §5–§9: capture and replay, collections, hierarchy, roles, the persistence rules |
+| 849774462 | CE Object Metadata Service (OMS) — API spec | §5–§6: OMS as a REST/MongoDB service, collection model |
+| 535004638 | AIU — Unified Architecture for Cloud Enterprise and Lake | Why one architecture serves both VCE and VCL sites |
+| 604043454 | Global Compute Service | GCS role model and API surface |
+| 579567617 | Unified Pooling for AIU Compute Engines | Warm-pool design, instance-type policy, capacity reservations |
+| 768558083 | Compute Engines Standard Deployment — Networking Requirements & Design | Three-phase network build; account boundaries in KB §2.5 |
+| 713917748 / 707462310 / 731059421 | AWS Architecture / Azure Architecture / Internet Connectivity | Per-cloud instance types and connectivity options |
+| 1184006312 | Global Orchestration Service (LMO) | LMO deployment and workflow model |
+| 663850010 | Compute Engine Metadata Service — Initial Release WIP | What CMS stores, including the disputed restore order in §12.5 |
+| 516731689 | AIU Compute on VCE Architecture | The original POC-era design |
+| 910327882 | 2.0 Architecture | The planned event-driven successor to today's synchronous provisioning. **Not deployed** — do not describe it as current behaviour |
+| D043941 | Compute Engine Basics: The Architecture and How it Works (internal, Nov 2025) | §1–§4: vprocs, the map system, spool-map versioning, the NLB's non-role, FirstConfig |
+
+Also: the Elastic Compute **Admin** and **Database** user guides, and the Cloud Elastic
+Compute OCI deck (SharePoint, not linked here — they live under personal drives; ask the
+doc owner). Those three are the customer-facing view and the source for the product-level
+limitations in §10.

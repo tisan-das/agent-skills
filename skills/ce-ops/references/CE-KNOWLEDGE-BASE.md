@@ -973,6 +973,15 @@ Virtual System Group — see `CE-DATA-PLANE.md` §5–§6.
 > correct behaviour, not a fault. This is separate from provisioning the **site-level** OMS
 > component via LMO's `oms-create` workflows. `[current]`
 
+**QueryGrid has four parts**, and the corpus's QG incidents all touch the first and third:
+
+| Part | What it does | Where |
+|---|---|---|
+| **QGM** (QueryGrid Manager) | Control plane: stores systems, links and connectors; REST API everything else calls; monitoring and security | One VM per site, in the VCE database VPC |
+| **QG Fabric** | Data movement: parallel transfer, heartbeats, resiliency, error handling | Distributed across participating nodes |
+| **`tdqg-node`** | Per-host agent managing that host's Fabric and connector processes; reports health to QGM | Baked into the CE image, on every CE and EDW node |
+| **Connectors** | Per-system translators: Teradata (bidirectional), Hive, Spark, BigQuery, Oracle, generic JDBC, Arrow Flight SQL | Alongside the node service |
+
 **QueryGrid runtime topology — two paths, and only one of them is private.** The sequence
 above provisions QG; this is where the pieces then sit. QGM is a separate VM in the **VCE
 database VPC** (one per site, shared with any pre-existing QueryGrid deployment), while
@@ -1392,6 +1401,21 @@ never told a wrong number. This is the **only** autoscale signal that ever reach
 multi-group scaler with preference-ordered placement and fallback when a SKU is
 capacity-constrained; **GCP MIG** scaffolded (detection works, scaler methods return
 `ErrNotImplemented`).
+
+**The instance types that fallback chooses between** — worth knowing, because "no capacity"
+reads very differently when only one SKU is actually supported. Types are deliberately
+hidden from customers, who choose a size (1x = 16 vCPU, up to 32x), not a machine.
+`[design-doc]`
+
+| Cloud | Preferred | Fallback |
+|---|---|---|
+| AWS | `i4i` | `i7i`. Heterogeneous clusters are possible (one `12xl` may be replaced by three `4xl`) |
+| Azure | `Standard_L16s_v3` — **the only supported SKU**, a marketplace limitation | `Standard_E16s_v5` / `Standard_E16ds_v5` under evaluation, not yet available |
+
+So on Azure a capacity-constrained `Standard_L16s_v3` has **nowhere to fall back to** today,
+and the fleet scaler's preference ordering has one entry. Treat an Azure capacity failure as
+expected behaviour under constraint (class R4), not a scaler defect, until the fallback SKUs
+ship.
 
 ---
 
@@ -2195,6 +2219,17 @@ is still open for AWS. And `idp/init.sls` still has both the `dbc/dbc` and
 | Engine (metering) → SNS | instance profile → `sts:AssumeRole` (with a fixed `ExternalId`); on Azure a 3-hop MI → App Registration → `AssumeRoleWithWebIdentity` |
 | LMO → Metadata (setup callback) | **HMAC-SHA256** `X-LMO-Signature` over the raw body |
 
+**Which role may call what on GCS.** The table above says *how* a caller authenticates;
+this says what CIDS will then authorise. A `403` that is not a token problem is usually a
+caller holding the read-only role. `[design-doc]`
+
+| Role | Allowed on clusters and configs |
+|---|---|
+| `TD-Customer-Admin` (VCE admin) | full CRUD |
+| `TD-Ops` (Teradata ops) | full CRUD |
+| `ServiceUpdateRequester` (`svc_update`) | GET + PUT/PATCH |
+| `ServiceReadRequester` (`svc_read`) | GET only, including pooling clusters |
+
 **Token-minting pattern learned the hard way** (ce-agent ADR-003): keep the minted token and
 the client credentials in a **process-wide singleton cache**; on 401 invalidate **only the
 minted token** and re-mint from cached credentials; refresh the credentials from Secrets Manager
@@ -2875,7 +2910,9 @@ state that strands the next CE (§7.6).
 | **VCE / VCL** | VantageCloud Enterprise (the always-on EDW product) / VantageCloud Lake. CE serves sites of both kinds |
 | **AIU** | Advanced Integrated Unit — the early codename for CE, and the initiative that unified the VCE and VCL compute architectures. Appears in older page titles |
 | **OTF / NOS** | Open Table Format (Iceberg, Delta, Hudi) / Native Object Store — querying object storage directly from SQL |
-| **QGM / `tdqg-node`** | QueryGrid Manager, one VM per site in the VCE database VPC / the per-node QG agent that boots waiting for its config secret |
+| **QGM / QG Fabric / `tdqg-node` / connector** | QueryGrid's four parts: the per-site manager VM (config, REST API, monitoring) / the data-movement layer handling parallel transfer, heartbeats and resiliency / the per-node agent that boots waiting for its config secret / the pluggable per-system translator (Teradata, Hive, Spark, BigQuery, Oracle, generic JDBC, Arrow Flight SQL) |
+| **SCAgent** | The agent running **inside the customer's VCE site account** that provisions and manages CE VMs on SCOrch's behalf. The reason GCS never touches customer-account resources directly (§2.5) |
+| **Federated query** | One SQL statement spanning systems without moving data first — what QueryGrid provides, and CE's only route to EDW block storage |
 | **SCIM / OIDC / BYOIDP** | Group-membership sync / the only supported SSO protocol (SAML is not supported) / bring-your-own identity provider |
 | **ASG / VMSS / MIG** | The AWS / Azure / GCP scaling-group primitive backing the warm pool |
 | **CIDS** | Control-plane Identity Service — RBAC, role mappings, service principals |
