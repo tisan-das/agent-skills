@@ -1,6 +1,6 @@
 ---
 name: ce-ops
-description: Teradata VantageCloud Lake Compute Engine (CE) ops - knowledge base, log triage, and RCA writeup. Use when a CE or site is stuck, failed, degraded, or won't start (FAILED_PROVISIONING, NOT_PROVISIONED, down/hardstop, stuck Starting/Stopping, expand vconfig), when analyzing CloudWatch Logs Insights exports, messages syslog or Salt minion logs, when you need the root cause of a CE incident or Jira, and when writing it up as an RCA, postmortem, incident report, or ticket summary. Also use when asked how CE architecture, pooled/dedicated provisioning, autoscale, OMS/QueryGrid/PrivateLink or state semantics work, or why the console, API and engine disagree on status. Triggers on GCS/cog-global-compute, accp-metadata-service, LMO, SCOrch, ce-autoscaler, CE/site IDs (CEAM*/CEAZ*, TDICAM*/TDICAZ*), error codes (4529/9710, 7825, ARM 409, Event 13912), even a bare CE ID plus a state word. Bundles tested log parsers - use them, never parse inline. Not for Teradata SQL/DBA work or CE feature development.
+description: Teradata VantageCloud Lake Compute Engine (CE) ops - knowledge base, log triage, RCA writeup. Use when a CE or site is stuck, failed, degraded, or won't start (FAILED_PROVISIONING, NOT_PROVISIONED, down/hardstop, stuck Starting/Stopping, expand vconfig), when analyzing CloudWatch Insights exports, messages syslog or Salt minion logs, when you need the root cause of a CE incident or Jira, and when writing it up as an RCA or postmortem. Also use when asked how CE architecture, pooled/dedicated provisioning, autoscale, OMS/QueryGrid/PrivateLink or state semantics work, why the console, API and engine disagree on status, or why views, UDFs, roles or grants vanish across a stop/start. Triggers on GCS/cog-global-compute, accp-metadata-service, LMO, SCOrch, ce-autoscaler, CE/site IDs (CEAM*/CEAZ*, TDICAM*/TDICAZ*), error codes (4529/9710, 7825, ARM 409, Event 13912). Bundles tested log parsers - use them, never parse inline. Not for general SQL tuning, DBA work, or CE feature development.
 license: internal
 ---
 
@@ -247,6 +247,11 @@ These rules come from the documents themselves and from real investigation failu
   for the CE services themselves, generic AWS/CloudWatch questions with no CE involved,
   NLB/PrivateLink *design* discussions, and non-CE systems (Kubernetes/EKS, RAG
   pipelines).
+- **The SQL/DBA boundary moved** when `CE-DATA-PLANE.md` landed. Still out: general Teradata
+  query tuning, capacity planning, DBA administration. **In**: why a CE's objects, roles or
+  grants did not survive a stop/start, why a query lands on `TD_MAP1` instead of
+  `TD_SpoolMap`, what PERM space a CE actually has. Those are CE-shape questions that happen
+  to be phrased in SQL, and the corpus now answers them.
 
 ## Maintenance
 

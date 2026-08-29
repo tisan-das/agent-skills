@@ -184,7 +184,7 @@ object and foreign-table definition would have to be recreated by hand on every 
 
 | Service | Expansion | What it does | Where it runs |
 |---|---|---|---|
-| **MCS** | Metadata Capture Service | Hooks the engine's **RSG vproc**, which fires when DDL executes. Captures the object, checks for name conflicts across the **VSG** (Virtual System Group), forwards JSON to OMS. On provisioning it replays DDL/DCL back onto the new CE in creation order. | On the OMS VM, inside the site — **not** global |
+| **MCS** | Metadata Capture Service | Hooks the engine's **RSG vproc** (Relay Services Gateway), which relays DDL off the node as it executes. Captures the object, checks for name conflicts across the **VSG** (Virtual System Group), forwards JSON to OMS. On provisioning it replays DDL/DCL back onto the new CE in creation order. | On the OMS VM, inside the site — **not** global |
 | **OMS** | Object Metadata Service | REST API over **MongoDB** (CSP-managed, one per site). Durable store of object definitions, organised into collections. | One instance per site, co-located with MCS on the same VM |
 
 Co-locating them on one VM is deliberate: it keeps networking and credential management
@@ -194,7 +194,7 @@ Gateway** over OAuth2/JWT; internal OMS-to-MCS traffic uses **mTLS**.
 ```mermaid
 flowchart LR
     USER["Data Curator SQL session"]
-    RSG["RSG vproc<br/>DDL hook on the engine"]
+    RSG["RSG vproc - Relay Services Gateway<br/>relays DDL off the node"]
     MCS["MCS"]
     VSG{"name unique<br/>across the VSG?"}
     OMS[("OMS<br/>MongoDB, one per site")]
@@ -212,6 +212,13 @@ flowchart LR
 
 Capture is automatic and continuous. No administrator triggers it. **The CE is stateless
 infrastructure that MCS makes look stateful.**
+
+**Why the RSG.** The Relay Services Gateway is a stock Teradata vproc, one per node, whose
+documented job is exactly this: the database hands it a DDL statement and it forwards the
+statement over TCP to an external metadata service. Teradata's own Meta Data Services uses
+the same path. MCS is not a bespoke hook into the engine — it is a consumer of an existing
+relay, which is why object capture needs no engine modification. `[current]` for the vproc's
+role (public Teradata documentation); `[design-doc]` for MCS being the consumer.
 
 The VSG conflict check is worth remembering during D3 triage: the KB records
 `MCS API returned 400` as meaning *"duplicate registration, bad `address`/`collection_id`/
@@ -323,22 +330,16 @@ behaviour, not a defect.
 
 ## 10. Known limitations — check here before opening an investigation
 
-`[design-doc]`, from the GA limitation list. These produce symptoms that look exactly like
-D3/D6 defects. They are duplicated as R7 rows in
-[`CE-SIGNATURE-REGISTRY.md`](CE-SIGNATURE-REGISTRY.md) so that a single grep during SOP step
-S2 (DEDUP) finds them.
+A set of documented behaviours — grants that were never going to survive, dotted database
+names, `SL`-compiled UDFs, just-in-time repopulation, purged DBQL — produce symptoms
+indistinguishable from D3/D6 defects and account for a large share of "objects are missing"
+reports.
 
-| Symptom reported | Actual cause | Jira |
-|---|---|---|
-| "My grants disappeared after restarting the CE" | Grant was made to a user or at object scope; only ROLE + DATABASE scope is replayed | IDR-285 |
-| "Objects fail to reappear for this database" | Database name contains a dot (e.g. an email-format name) — breaks OMS repopulation | IDR-199 |
-| "My UDF is gone after a restart" | UDF was compiled with the shared-library (`SL`) prefix; those are not persisted | IDR-315 |
-| "Query failed right after the CE started, works now" | JIT object repopulation had not reached that object yet | — |
-| "Service account cannot see the global database" | `clientID` service accounts cannot be granted authorization to GLOBAL databases | — |
-| "Admin role is missing from the console" | Admin is disabled; Data Curator carries Admin privileges in the interim | — |
-| "DBQL for the incident window is empty" | DBQL/RSS/EventLog are purged every 6 h and not persisted | — |
-| "Autoscale did nothing" | Autoscale ships **disabled by default** pending database-level fixes — but it is not absent. F9/F9b document the daemon in detail and the registry carries live autoscale failures (#16b, #36, #61), so check the setting before concluding either "broken" or "not shipped" | — |
-| "Viewpoint only shows some of our CEs" | Maximum 10 CEs monitored simultaneously | — |
+**They live in [`CE-SIGNATURE-REGISTRY.md`](CE-SIGNATURE-REGISTRY.md), section *Documented
+product limitations*, not here.** That is deliberate: dedup (SOP step S2) is a single grep of
+the registry, and one canonical copy cannot drift from the other. The registry rows carry the
+confirm step and the Jira key; [§9](#9-the-persistence-contract) above explains *why* they
+happen, which is what stops the next one being a surprise.
 
 OMS GA-readiness work is tracked under epic **COG-12376**.
 
@@ -371,20 +372,28 @@ Resolve these against code or a current design owner before quoting either side 
 2. **LMO expansion.** Design docs give *Last Minute Orchestrator* (an internal nickname) with
    the formal name *Global Orchestration Service*. The KB says *Lifecycle/Management
    Orchestrator*. Unresolved.
-3. **`DSA`.** Design docs use both "Dictionary Space Archive" and "Dictionary Space
-   Analyzer" for the dictionary backup/restore used in the CMS provisioning order; Teradata's
-   product of that name is Data Stream Architecture. Do not cite the expansion until checked.
+3. ~~**`DSA`.**~~ **Resolved.** `DSA` is **Data Stream Architecture**, Teradata's
+   backup/archive/restore (BAR) stack — not "Dictionary Space Archive" or "Dictionary Space
+   Analyzer", both of which appear in the design docs and are wrong. Notably the **RSG vproc
+   provides the socket interface DSA uses**, so the same relay underpins both the archive
+   path and the DDL-capture path. That makes the restore question in §12.5 sharper, not
+   vaguer.
 4. **Node counts.** "2 PEs and 4 standard AMPs on the leader" is a design-document constant.
    It has not been confirmed against a running CE at every size, and sizes run 1x to 32x.
 5. **Two restore mechanisms are described, and never reconciled.** §5 above documents the
    OMS/MCS path: MCS replays captured DDL onto the new engine. The CMS design page instead
    gives a four-step provisioning order in which step 3 is a **dictionary restore from a DSA
    archive** and step 4 is DDL replay for users and authorization objects — with views,
-   macros and UDFs attributed to the DSA archive rather than to OMS. Both cannot be the whole
-   story, and the split matters directly to D3 triage: "my view did not come back" is a
-   different investigation depending on whether views travel by archive or by replayed DDL.
-   **Establish which mechanism actually runs before concluding anything about missing
-   objects.**
+   macros and UDFs attributed to the DSA archive rather than to OMS.
+
+   Now that `DSA` is known to be Data Stream Architecture (a real Teradata BAR product, not a
+   documentation typo), the likeliest reading is that the two are **complementary**: an
+   archive restores the dictionary wholesale, and DDL replay layers on the objects that must
+   be reconstructed per-CE. But that is `[inferred]`, and the split decides a real
+   investigation — "my view did not come back" is a different hunt depending on whether views
+   travel by archive or by replayed DDL, and the two mechanisms fail in different places.
+   **Establish which path owns which object type before concluding anything about missing
+   objects.** This is the highest-value open question in this file.
 
 **Not covered here:** SCOrch, CIDS, Valtix, ServiceNow and Viewpoint internals (see
 `CE-KNOWLEDGE-BASE.md` §10.3); the QueryGrid *provisioning* sequence (see
