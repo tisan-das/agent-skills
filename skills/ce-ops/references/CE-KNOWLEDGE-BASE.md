@@ -1412,10 +1412,11 @@ hidden from customers, who choose a size (1x = 16 vCPU, up to 32x), not a machin
 | AWS | `i4i` | `i7i`. Heterogeneous clusters are possible (one `12xl` may be replaced by three `4xl`) |
 | Azure | `Standard_L16s_v3` — **the only supported SKU**, a marketplace limitation | `Standard_E16s_v5` / `Standard_E16ds_v5` under evaluation, not yet available |
 
-So on Azure a capacity-constrained `Standard_L16s_v3` has **nowhere to fall back to** today,
-and the fleet scaler's preference ordering has one entry. Treat an Azure capacity failure as
-expected behaviour under constraint (class R4), not a scaler defect, until the fallback SKUs
-ship.
+If that SKU list is still accurate, a capacity-constrained `Standard_L16s_v3` has **nowhere to
+fall back to** on Azure and the fleet scaler's preference ordering has a single entry — which
+would make an Azure capacity failure expected behaviour under constraint (class R4) rather
+than a scaler defect. That conclusion is `[inferred]` from two design-doc statements: check
+the configured SKU list before leaning on it, since the evaluation SKUs may since have shipped.
 
 ---
 
@@ -2761,8 +2762,9 @@ tail -50 /var/log/password_rotation.log
 `salt-call --local state.sls state.idp` is **not read-only** — it rewrites live TDGSS config and
 the healthcheck marker. Use a maintenance window.
 
-**PERM space** is scarce on a CE — roughly **60 GB** for the whole engine — and is allocated
-explicitly, flowing `DBC -> TD_GLOBAL -> global databases -> TD_PARENT -> local databases`:
+**PERM space** is scarce on a CE — the design docs quote **~60 GB** for permanent tables
+without pinning the scope — and is allocated explicitly, flowing
+`DBC -> TD_GLOBAL -> global databases -> TD_PARENT -> local databases`:
 
 ```sql
 CALL TD_GLOBAL.ChangeSpace('database_name', bytes, :msg);
@@ -2991,11 +2993,16 @@ When you learn something new about CE, add it here in the right place:
 - a **new defect** → §9.1/§9.2
 - a **new endpoint/table/log group** → §8
 - a **behaviour change** → §5.6, and mark the affected incident **✅ Fixed**
+- anything about the **engine internals or database objects** (vprocs, maps, spool, OMS/MCS,
+  collections, roles, grants, what survives a stop) → `CE-DATA-PLANE.md`, not here — and if
+  you can verify one of its `[design-doc]` claims against code or a log, promote the marker
+  and say what you checked
 
 Keep the three rules that made this document useful:
 
 1. **Cite the code path or the log line**, never a README.
-2. **Mark every claim** `[as-deployed]`, `[current]` or `[inferred]`, and refresh the §0 stamp.
+2. **Mark every claim** `[as-deployed]`, `[current]`, `[design-doc]` or `[inferred]`, and
+   refresh the §0 stamp.
 3. **Label every arrow** in a diagram with the call and the reason — an unlabelled arrow is a
    box-and-line drawing, not documentation.
 

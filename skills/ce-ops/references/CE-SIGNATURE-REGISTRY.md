@@ -191,7 +191,7 @@ Full explanation of the persistence rules behind them: `CE-DATA-PLANE.md` §9–
 | "Service account cannot reach the GLOBAL database" | `clientID` service accounts cannot be granted authorization to GLOBAL databases | Confirm the principal is a clientID, not a user | — |
 | "The Admin role is missing from the console" | Admin is disabled; Data Curator carries Admin privileges in the interim | — | — |
 | "DBQL is empty for the incident window" | DBQL / RSS / EventLog are purged **every 6 h** and not persisted. File the observability gap; do not hunt the missing log | Check the window age against the last purge | — |
-| "Autoscale never fired" | Autoscale shipped **disabled** pending database-level fixes | Confirm it is enabled for this CE before treating silence as a defect | — |
+| "Autoscale never fired" | Autoscale ships **disabled by default** pending database-level fixes. Not the same as absent — rows #16b, #36 and #61 are live autoscale failures | Confirm the setting for this CE before concluding either "broken" or "not shipped" | — |
 | "Viewpoint is not showing all our CEs" | Maximum **10** CEs monitored simultaneously | Count the CEs registered to that Viewpoint | — |
 | "QueryGrid cannot be enabled on this site" | QG requires the VCE system to use Global Identity (OIDC SSO); older VCE versions are not compatible | Check the VCE version and whether Global Identity is configured | — |
 
@@ -227,3 +227,8 @@ Every row below is a real event from the Aug-2026 UAT batch. These are the failu
   both Jira keys (see IDR-301 → IDR-278) — recurrences are the strongest argument for
   a regression test.
 - Review quarterly: delete rows whose fix has shipped in every supported BOM.
+- **Leave *Documented product limitations* unnumbered.** That section is deliberately outside
+  the `#N` space: its rows are design-doc claims, not root causes proven from a Jira thread,
+  and numbering them would both dilute this file's evidence bar and consume identifiers.
+  If one of those limitations is ever confirmed as a defect with a proven mechanism, promote
+  it to a numbered row then — and delete the unnumbered entry so it does not exist twice.

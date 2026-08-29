@@ -67,7 +67,7 @@ flowchart TB
 |---|---|---|
 | Parsing Engines | 2 | none |
 | Standard AMPs (BFS/permanent) | 4 — Data Dictionary only, never user data | none |
-| CW AMPs (spool only, NVMe) | several | all of them |
+| CW AMPs (spool only) | several | all of them, each with local NVMe spool |
 | Removable by autoscale | no | yes |
 
 **Consequences that show up in tickets:**
@@ -260,9 +260,11 @@ flowchart TB
     TDG --> GDB
 ```
 
-**PERM space is allocated explicitly**, and it is scarce — roughly **60 GB** for the whole
-CE. Space flows `DBC -> TD_GLOBAL -> global databases -> TD_PARENT -> local databases ->
-user databases`. To move it:
+**PERM space is allocated explicitly**, and it is scarce: the source says permanent tables
+have only **~60 GB** available, without stating whether that ceiling is per database, per CE,
+or the whole PERM allocation — establish the scope before quoting the number. Space flows
+`DBC -> TD_GLOBAL -> global databases -> TD_PARENT -> local databases -> user databases`.
+To move it:
 
 ```sql
 CALL TD_GLOBAL.ChangeSpace('database_name', bytes, :msg);
@@ -335,7 +337,7 @@ S2 (DEDUP) finds them.
 | "Service account cannot see the global database" | `clientID` service accounts cannot be granted authorization to GLOBAL databases | — |
 | "Admin role is missing from the console" | Admin is disabled; Data Curator carries Admin privileges in the interim | — |
 | "DBQL for the incident window is empty" | DBQL/RSS/EventLog are purged every 6 h and not persisted | — |
-| "Autoscale did nothing" | Autoscale shipped disabled pending database-level fixes; confirm it is enabled before treating silence as a defect | — |
+| "Autoscale did nothing" | Autoscale ships **disabled by default** pending database-level fixes — but it is not absent. F9/F9b document the daemon in detail and the registry carries live autoscale failures (#16b, #36, #61), so check the setting before concluding either "broken" or "not shipped" | — |
 | "Viewpoint only shows some of our CEs" | Maximum 10 CEs monitored simultaneously | — |
 
 OMS GA-readiness work is tracked under epic **COG-12376**.

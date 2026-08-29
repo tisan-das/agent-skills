@@ -254,9 +254,16 @@ The corpus in `references/` is a **snapshot**. When an investigation produces ne
 knowledge, follow the docs' own maintenance contracts (KB §10.4, registry "Maintenance",
 SOP S10): new flow → KB §4 as F21+; new incident → KB §7; new defect → KB §9; new
 endpoint/table/log group → KB §8; behaviour change → KB §5.6 + mark the incident fixed;
-confirmed root cause → new registry row. Prefer citing code paths or log lines (never a
-README), mark every claim as-deployed/current/inferred, and label diagram arrows with the
-call and the reason. Scope `[current]` claims with a **commit SHA** (and deploy env or
+confirmed root cause → new registry row; engine internals or database-object behaviour →
+`CE-DATA-PLANE.md` (leave the registry's *Documented product limitations* section
+unnumbered — it sits outside the `#N` space by design). Prefer citing code paths or log
+lines (never a README), mark every claim as-deployed/current/design-doc/inferred, and label
+diagram arrows with the call and the reason.
+
+**The highest-value maintenance action available** is verifying one of `CE-DATA-PLANE.md`'s
+`[design-doc]` claims against code or a log: promote the marker and record what you checked.
+Its §12 lists the open conflicts worth settling first — the OMS/LMO acronym expansions, and
+whether database objects are restored from a DSA archive or by MCS replaying DDL. Scope `[current]` claims with a **commit SHA** (and deploy env or
 version when known) — see KB §0 — not with a git branch name alone.
 
 This SKILL.md carries **derived** content — the condensed pipeline, the routing table,
